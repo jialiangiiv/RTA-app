@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Design tokens: shadcn/ui's standard CSS-variable contract, themed to keep this app's
+  editorial personality (warm paper surface, near-black ink, one rust brand accent used
+  sparingly for focus/active states) rather than shadcn's generic neutral-gray default.
+*/
+@layer base {
+  :root {
+    --background: 45 33% 95%;
+    --foreground: 20 14% 8%;
+
+    --card: 45 40% 98%;
+    --card-foreground: 20 14% 8%;
+
+    --popover: 45 40% 98%;
+    --popover-foreground: 20 14% 8%;
+
+    --primary: 20 14% 8%;
+    --primary-foreground: 45 40% 98%;
+
+    --secondary: 42 24% 89%;
+    --secondary-foreground: 20 14% 8%;
+
+    --muted: 42 22% 87%;
+    --muted-foreground: 35 10% 38%;
+
+    --accent: 42 24% 89%;
+    --accent-foreground: 20 14% 8%;
+
+    --destructive: 4 62% 39%;
+    --destructive-foreground: 45 40% 98%;
+
+    --border: 42 20% 80%;
+    --input: 42 20% 80%;
+    --ring: 14 68% 40%;
+
+    /* App brand accent — distinct from shadcn's semantic "accent" (hover tint). Used
+       sparingly: active tab underline, links, focus emphasis. Per-project excerpt
+       highlight colors are user data and are applied via inline style, not this token. */
+    --brand: 14 68% 40%;
+    --brand-foreground: 45 40% 98%;
+
+    --radius: 0.6rem;
+  }
+
+  .dark {
+    --background: 20 14% 8%;
+    --foreground: 45 33% 95%;
+
+    --card: 20 12% 11%;
+    --card-foreground: 45 33% 95%;
+
+    --popover: 20 12% 11%;
+    --popover-foreground: 45 33% 95%;
+
+    --primary: 45 33% 95%;
+    --primary-foreground: 20 14% 8%;
+
+    --secondary: 20 10% 16%;
+    --secondary-foreground: 45 33% 95%;
+
+    --muted: 20 10% 16%;
+    --muted-foreground: 40 8% 65%;
+
+    --accent: 20 10% 16%;
+    --accent-foreground: 45 33% 95%;
+
+    --destructive: 4 55% 45%;
+    --destructive-foreground: 45 33% 95%;
+
+    --border: 20 10% 20%;
+    --input: 20 10% 20%;
+    --ring: 14 68% 50%;
+
+    --brand: 14 68% 50%;
+    --brand-foreground: 20 14% 8%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+}

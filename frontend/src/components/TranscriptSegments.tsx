@@ -1,21 +1,19 @@
 import { TranscriptSegment } from "../lib/transcriptSegments";
-import { QualitativeCode } from "../types/domain";
+import { CodedExcerpt } from "../types/domain";
 
 interface TranscriptSegmentsProps {
   segments: TranscriptSegment[];
-  qualitativeCodesById: Record<string, QualitativeCode>;
-  /** Every CodedExcerpt in a Project renders in this one color — codes are told apart by their label, not hue. */
   highlightColor: string;
-  /** Omit to render read-only. */
-  onRemoveExcerpt?: (excerptId: string) => void;
+  /** Omit either to render read-only (no hover card wiring). */
+  onHoverExcerpt?: (excerpt: CodedExcerpt, rect: DOMRect) => void;
+  onUnhoverExcerpt?: () => void;
 }
 
 /** Renders pre-split transcript runs with q_code highlights and bookmark flags, for the normal coding view. */
-export function TranscriptSegments({ segments, qualitativeCodesById, highlightColor, onRemoveExcerpt }: TranscriptSegmentsProps) {
+export function TranscriptSegments({ segments, highlightColor, onHoverExcerpt, onUnhoverExcerpt }: TranscriptSegmentsProps) {
   return (
     <>
       {segments.map((segment) => {
-        const qCode = segment.excerpt ? qualitativeCodesById[segment.excerpt.qualitative_code_id] : undefined;
         const marker = segment.bookmark && (
           <span
             key={`bookmark-${segment.bookmark.id}`}
@@ -28,28 +26,18 @@ export function TranscriptSegments({ segments, qualitativeCodesById, highlightCo
         );
 
         if (segment.excerpt) {
+          const excerpt = segment.excerpt;
           return (
             <span
               key={segment.start}
+              id={`excerpt-${excerpt.id}`}
               className="relative rounded-sm py-0.5 shadow-[inset_0_-2px_0_rgba(0,0,0,0.4)] [mix-blend-mode:multiply]"
               style={{ backgroundColor: highlightColor }}
-              title={qCode ? qCode.label + (segment.excerpt.memo ? ` — ${segment.excerpt.memo}` : "") : "code"}
+              onMouseEnter={(e) => onHoverExcerpt?.(excerpt, e.currentTarget.getBoundingClientRect())}
+              onMouseLeave={() => onUnhoverExcerpt?.()}
             >
               {marker}
               {segment.text}
-              {onRemoveExcerpt && (
-                <button
-                  type="button"
-                  className="ml-0.5 align-super text-xs font-bold text-foreground [mix-blend-mode:normal] hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveExcerpt(segment.excerpt!.id);
-                  }}
-                  title="Remove this CodedExcerpt"
-                >
-                  ×
-                </button>
-              )}
             </span>
           );
         }

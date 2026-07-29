@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useTranscripts } from "../hooks/useTranscripts";
 import { transcriptsApi } from "../api/transcripts";
-import { Transcript } from "../types/domain";
+import { TranscriptSummary } from "../types/domain";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ interface TranscriptListProps {
   projectId: string;
   activeTranscriptId: string | null;
   onActiveTranscriptChange: (transcriptId: string) => void;
-  onTranscriptsLoaded: (transcripts: Transcript[]) => void;
+  onTranscriptsLoaded: (transcripts: TranscriptSummary[]) => void;
 }
 
 export function TranscriptList({
@@ -19,8 +19,9 @@ export function TranscriptList({
   onTranscriptsLoaded,
 }: TranscriptListProps) {
   const { transcripts, loading, error, refresh } = useTranscripts(projectId);
-  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importing = importProgress !== null;
 
   useEffect(() => {
     onTranscriptsLoaded(transcripts);
@@ -28,19 +29,48 @@ export function TranscriptList({
   }, [transcripts]);
 
   async function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImporting(true);
-    try {
-      const transcript = await transcriptsApi.importFile({ project_id: projectId, title: file.name, file });
-      await refresh();
-      onActiveTranscriptChange(transcript.id);
-    } catch (err) {
-      window.alert((err as Error).message);
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    const chosen = Array.from(e.target.files ?? []);
+    if (chosen.length === 0) return;
+
+    // Naming convention: transcripts are expected as P<participant number>.docx/.pdf (e.g. P1.docx).
+    const NAME_PATTERN = /^P\d+\.(docx|pdf)$/i;
+    const files = chosen.filter((f) => NAME_PATTERN.test(f.name));
+    const rejected = chosen.filter((f) => !NAME_PATTERN.test(f.name)).map((f) => f.name);
+    if (rejected.length > 0) {
+      window.alert(
+        `These file names don't match the expected P<number>.docx/.pdf format and were not imported:\n${rejected.join(
+          "\n"
+        )}\n\nPlease rename them (e.g. P1.docx) and try again.`
+      );
     }
+    if (files.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    // Parsing a transcript (mammoth/pdf-parse) is CPU-bound work on the backend — uploading many
+    // files at once one-by-one keeps each import responsive instead of piling up concurrent parses.
+    setImportProgress({ done: 0, total: files.length });
+    const failures: string[] = [];
+    let lastImportedId: string | null = null;
+
+    for (const file of files) {
+      try {
+        const transcript = await transcriptsApi.importFile({ project_id: projectId, title: file.name, file });
+        lastImportedId = transcript.id;
+      } catch (err) {
+        failures.push(`${file.name}: ${(err as Error).message}`);
+      } finally {
+        setImportProgress((prev) => (prev ? { done: prev.done + 1, total: prev.total } : prev));
+      }
+    }
+
+    await refresh();
+    if (lastImportedId) onActiveTranscriptChange(lastImportedId);
+    if (failures.length > 0) window.alert(`Some transcripts failed to import:\n${failures.join("\n")}`);
+
+    setImportProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   return (
@@ -71,6 +101,7 @@ export function TranscriptList({
         ref={fileInputRef}
         type="file"
         accept=".docx,.pdf"
+        multiple
         onChange={handleFileChosen}
         disabled={importing}
         className="hidden"
@@ -83,8 +114,13 @@ export function TranscriptList({
         disabled={importing}
         onClick={() => fileInputRef.current?.click()}
       >
-        {importing ? "Importing…" : "Import Transcript (.docx/.pdf)"}
+        {importing ? `Importing ${importProgress!.done} of ${importProgress!.total}…` : "Import Transcripts (.docx/.pdf)"}
       </Button>
+      {importing && importProgress!.total > 1 && (
+        <p className="text-xs text-muted-foreground">
+          Large files can take a moment each — please keep this tab open until it finishes.
+        </p>
+      )}
     </div>
   );
 }

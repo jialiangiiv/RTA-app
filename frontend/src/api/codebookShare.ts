@@ -5,6 +5,8 @@ export interface CodebookShareBundle {
     name: string;
     description: string | null;
     highlight: string;
+    /** The exporter's active Codebook version label — informational only; import never applies it automatically. */
+    codebook_version?: string;
   };
   questions: Array<{
     rq_label: string;

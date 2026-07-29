@@ -27,8 +27,15 @@ export const projectsService = {
    * Users don't create Codebooks — every Project auto-gets exactly one 'own' Codebook.
    * Pass autoCreateOwnCodebook: false only when the caller (Project bundle import) is about
    * to recreate the source's own Codebook itself, to avoid ending up with two.
+   * codebookVersionLabel is user-provided at creation time (see ProjectSetupPage) — never
+   * auto-generated; falls back to "current" only for internal callers that don't collect one.
    */
-  create(input: { name: string; description?: string | null; autoCreateOwnCodebook?: boolean }): Project {
+  create(input: {
+    name: string;
+    description?: string | null;
+    autoCreateOwnCodebook?: boolean;
+    codebookVersionLabel?: string;
+  }): Project {
     const now = nowIso();
     const { maxOrder } = db.prepare("SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM projects").get() as {
       maxOrder: number;
@@ -47,10 +54,11 @@ export const projectsService = {
     };
     this.insertFull(project);
     if (input.autoCreateOwnCodebook ?? true) {
+      const versionLabel = input.codebookVersionLabel ?? "current";
       const codebook = codebooksService.create({
         project_id: project.id,
-        name: "My Codes",
-        version_label: "current",
+        name: versionLabel,
+        version_label: versionLabel,
         kind: "own",
       });
       db.prepare("UPDATE projects SET active_codebook_id = ? WHERE id = ?").run(codebook.id, project.id);

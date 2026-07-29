@@ -9,7 +9,7 @@ interface CodeSelectPopoverProps {
   position: { top: number; left: number };
   codes: QualitativeCode[];
   onSelect: (code: QualitativeCode) => void;
-  onCreateNew: (label: string) => void;
+  onCreateNew: (label: string, description: string) => void;
   onClose: () => void;
 }
 
@@ -22,6 +22,7 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [newLabel, setNewLabel] = useState("");
+  const [newDescription, setNewDescription] = useState("");
 
   const filtered = useMemo(
     () => codes.filter((c) => c.label.toLowerCase().includes(search.toLowerCase())),
@@ -33,14 +34,14 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!newLabel.trim()) return;
-    onCreateNew(newLabel.trim());
+    onCreateNew(newLabel.trim(), newDescription.trim());
   }
 
   return (
     <>
       <div className="fixed inset-0 z-[900]" onClick={onClose} />
       <div
-        className="fixed z-[901] flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
+        className="fixed z-[901] flex w-72 max-w-[calc(100vw-2rem)] animate-fade-in flex-col gap-3 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
         style={{ top: position.top, left: position.left }}
       >
         <Input
@@ -59,6 +60,9 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
                 className="w-full truncate rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
                 onClick={() => onSelect(code)}
               >
+                <span className="mr-1.5 text-muted-foreground" aria-hidden="true">
+                  •
+                </span>
                 {code.label}
               </button>
             </li>
@@ -78,14 +82,14 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
             </Button>
           </div>
         )}
-        <form className="flex gap-2 border-t pt-3" onSubmit={handleCreate}>
+        <form className="animate-fade-in space-y-2 border-t pt-3" onSubmit={handleCreate}>
+          <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="New code name" />
           <Input
-            className="flex-1"
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            placeholder="input new code"
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            placeholder="New code definition"
           />
-          <Button type="submit" variant="outline" size="sm">
+          <Button type="submit" variant="outline" size="sm" className="w-full" disabled={!newLabel.trim()}>
             Create &amp; Apply
           </Button>
         </form>

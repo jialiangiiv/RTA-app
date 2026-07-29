@@ -13,6 +13,8 @@ export interface CodebookShareBundle {
     name: string;
     description: string | null;
     highlight: string;
+    /** The active Codebook's user-set version label at export time — informational only; import never applies it automatically. */
+    codebook_version?: string;
   };
   questions: Array<{
     rq_label: string;
@@ -78,7 +80,12 @@ export const codebookShareService = {
     const excerptsByCode = new Map(codes.map((c) => [c.id, codedExcerptsService.listByQualitativeCode(c.id)]));
 
     return {
-      project: { name: project.name, description: project.description, highlight: project.highlight_color },
+      project: {
+        name: project.name,
+        description: project.description,
+        highlight: project.highlight_color,
+        codebook_version: codebook.version_label,
+      },
       questions: interviewQuestions.map((iq) => {
         const rq = rqById.get(iq.research_question_id);
         return {

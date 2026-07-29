@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { projectsApi } from "../api/projects";
 import { researchQuestionsApi } from "../api/researchQuestions";
 import { qualitativeCodesApi } from "../api/codebooks";
@@ -8,15 +9,20 @@ import { useCodedExcerpts } from "../hooks/useCodedExcerpts";
 import { useBookmarks } from "../hooks/useBookmarks";
 import { useCodebooks } from "../hooks/useCodebooks";
 import { useQualitativeCodes } from "../hooks/useQualitativeCodes";
+import { useActiveTranscript } from "../hooks/useActiveTranscript";
+import { useResizableWidth } from "../hooks/useResizableWidth";
 import { TranscriptList } from "../components/TranscriptList";
 import { IQTab } from "../components/IQTab";
 import { CodesTab } from "../components/CodesTab";
 import { BookmarksPanel } from "../components/BookmarksPanel";
 import { TranscriptView } from "../components/TranscriptView";
 import { CompareView } from "../components/CompareView";
-import { Project, QualitativeCode, Transcript, User } from "../types/domain";
+import { ResizeHandle } from "../components/ResizeHandle";
+import { Project, QualitativeCode, TranscriptSummary, User } from "../types/domain";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+const RIGHT_COLLAPSED_WIDTH = 36;
 
 interface ProjectWorkspaceProps {
   currentUser: User;
@@ -33,15 +39,19 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   const projectId: string = projectIdParam;
 
   const [project, setProject] = useState<Project | null>(null);
-  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscriptSummary[]>([]);
   const [activeTranscriptId, setActiveTranscriptId] = useState<string | null>(null);
   const [activeInterviewQuestionId, setActiveInterviewQuestionId] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState<number | null>(null);
   const [centerMode, setCenterMode] = useState<CenterMode>("coding");
   const [leftTab, setLeftTab] = useState<LeftTab>("documents");
   const [rightTab, setRightTab] = useState<RightTab>("codes");
+  const [rightHidden, setRightHidden] = useState(false);
+  const { width: leftWidth, startDrag: startLeftDrag } = useResizableWidth(280, 200, 480, "right");
+  const { width: rightWidth, startDrag: startRightDrag } = useResizableWidth(340, 260, 560, "left");
 
   const { interviewQuestions } = useInterviewQuestions(projectId);
+  const { transcript: activeTranscript } = useActiveTranscript(activeTranscriptId);
   const { codedExcerpts, refresh: refreshCodedExcerpts } = useCodedExcerpts(activeTranscriptId);
   const { bookmarks, refresh: refreshBookmarks } = useBookmarks(activeTranscriptId, currentUser.id);
   const { codebooks, refresh: refreshCodebooks } = useCodebooks(projectId);
@@ -92,7 +102,16 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     window.localStorage.setItem(`rta.lastIQ.${projectId}`, iqId);
   }
 
-  const activeTranscript = transcripts.find((t) => t.id === activeTranscriptId) ?? null;
+  // Scrolls to and briefly rings a highlighted excerpt's span — used by the Codes tab's
+  // "find highlights of this code" search so jumping between occurrences never needs new state.
+  function handleJumpToExcerpt(excerptId: string) {
+    const el = document.getElementById(`excerpt-${excerptId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-brand", "ring-offset-2");
+    window.setTimeout(() => el.classList.remove("ring-2", "ring-brand", "ring-offset-2"), 1200);
+  }
+
   const qualitativeCodesById = useMemo(
     () => Object.fromEntries([...qualitativeCodes, ...comparisonQualitativeCodes].map((qc) => [qc.id, qc])),
     [qualitativeCodes, comparisonQualitativeCodes]
@@ -117,6 +136,9 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
           </Button>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${projectId}/affinity-map`)}>
+            Affinity Map
+          </Button>
           {activeTranscript && centerMode === "coding" && (
             <Button variant="outline" size="sm" onClick={() => setCenterMode("comparison")}>
               Compare
@@ -125,7 +147,12 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
         </div>
       </header>
 
-      <div className="grid flex-1 grid-cols-[280px_1fr_340px] overflow-hidden">
+      <div
+        className="grid flex-1 overflow-hidden"
+        style={{
+          gridTemplateColumns: `${leftWidth}px auto 1fr auto ${rightHidden ? RIGHT_COLLAPSED_WIDTH : rightWidth}px`,
+        }}
+      >
         <aside className="overflow-y-auto border-r bg-card/40 p-4">
           <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as LeftTab)}>
             <TabsList className="w-full">
@@ -155,6 +182,8 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
           </Tabs>
         </aside>
 
+        <ResizeHandle onMouseDown={startLeftDrag} />
+
         <main className="overflow-y-auto p-8">
           {!activeTranscript ? (
             <p className="text-sm text-muted-foreground">Select or import a Transcript in the Documents tab to begin coding.</p>
@@ -167,7 +196,6 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
               leftQualitativeCodesById={qualitativeCodesById}
               highlightColor={project?.highlight_color ?? "#b0461d"}
               onExit={() => setCenterMode("coding")}
-              onArchived={refreshCodebooks}
               onFinished={() => {
                 refreshProject();
                 refreshCodebooks();
@@ -192,48 +220,64 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
           )}
         </main>
 
-        <aside className="overflow-y-auto border-l bg-card/40 p-4">
-          <Tabs value={rightTab} onValueChange={(v) => setRightTab(v as RightTab)}>
-            <TabsList className="w-full">
-              <TabsTrigger value="codes" className="flex-1">
-                Codes
-              </TabsTrigger>
-              <TabsTrigger value="bookmarks" className="flex-1">
-                Bookmarks
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="codes">
-              <CodesTab
-                projectId={projectId}
-                project={project}
-                ownCodebook={activeCodebook}
-                versions={versions}
-                qualitativeCodes={qualitativeCodes}
-                comparisonCodebooks={comparisonCodebooks}
-                transcripts={transcripts}
-                onCodesChanged={refreshCodes}
-                onCodebooksChanged={() => {
-                  refreshCodebooks();
-                  refreshProject();
-                }}
-                onExcerptsChanged={refreshCodedExcerpts}
-              />
-            </TabsContent>
-            <TabsContent value="bookmarks">
-              {activeTranscriptId ? (
-                <BookmarksPanel
-                  transcriptId={activeTranscriptId}
-                  userId={currentUser.id}
-                  bookmarks={bookmarks}
-                  cursorPosition={cursorPosition}
-                  onChanged={refreshBookmarks}
+        {rightHidden ? <div /> : <ResizeHandle onMouseDown={startRightDrag} />}
+        {rightHidden ? (
+          <div className="flex items-start justify-center border-l bg-card/40 p-1.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Show Codes panel" onClick={() => setRightHidden(false)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <aside className="overflow-y-auto border-l bg-card/40 p-4">
+            <div className="mb-2 flex justify-end">
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Hide Codes panel" onClick={() => setRightHidden(true)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <Tabs value={rightTab} onValueChange={(v) => setRightTab(v as RightTab)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="codes" className="flex-1">
+                  Codes
+                </TabsTrigger>
+                <TabsTrigger value="bookmarks" className="flex-1">
+                  Bookmarks
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="codes">
+                <CodesTab
+                  projectId={projectId}
+                  project={project}
+                  ownCodebook={activeCodebook}
+                  versions={versions}
+                  qualitativeCodes={qualitativeCodes}
+                  comparisonCodebooks={comparisonCodebooks}
+                  transcripts={transcripts}
+                  codedExcerpts={visibleCodedExcerpts}
+                  onCodesChanged={refreshCodes}
+                  onCodebooksChanged={() => {
+                    refreshCodebooks();
+                    refreshProject();
+                  }}
+                  onExcerptsChanged={refreshCodedExcerpts}
+                  onJumpToExcerpt={handleJumpToExcerpt}
                 />
-              ) : (
-                <p className="text-sm text-muted-foreground">Select a Transcript first.</p>
-              )}
-            </TabsContent>
-          </Tabs>
-        </aside>
+              </TabsContent>
+              <TabsContent value="bookmarks">
+                {activeTranscriptId ? (
+                  <BookmarksPanel
+                    transcriptId={activeTranscriptId}
+                    userId={currentUser.id}
+                    bookmarks={bookmarks}
+                    cursorPosition={cursorPosition}
+                    onChanged={refreshBookmarks}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Select a Transcript first.</p>
+                )}
+              </TabsContent>
+            </Tabs>
+          </aside>
+        )}
       </div>
     </div>
   );

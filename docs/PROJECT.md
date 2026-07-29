@@ -125,6 +125,33 @@ CodedExcerpt:
 User:
   - id
   - display_name
+
+AffinityNode (Affinity Map / Axial Coding board):
+  - id
+  - project_id
+  - node_type ('rq_lane' | 'section' | 'theme' | 'code' | 'note' | 'unsorted')
+  - parent_id? (self-reference — expresses nesting: Code -> Theme -> Section -> RQ lane)
+  - ref_id? (points at a ResearchQuestion.id when node_type='rq_lane', or a QualitativeCode.id
+    when node_type='code' — display text comes from the referenced row, not stored here)
+  - label? (Section/Theme name, or Note title; unused for code/rq_lane/unsorted)
+  - body? (freeform Note text; unused for all other node_types)
+  - pos_x, pos_y (canvas position)
+  - width?, height?
+  - font_size? (Note text size only)
+  - color?
+  - z_index
+  - created_at, updated_at
+
+Tag (custom label for Affinity Map nodes, e.g. status/source/importance):
+  - id
+  - project_id
+  - name
+  - color?
+  - created_at
+
+AffinityNodeTag (assignment join):
+  - affinity_node_id
+  - tag_id
 </DATA_MODEL>
 
 <FILE_IMPORT_EXPORT>

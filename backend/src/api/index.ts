@@ -8,6 +8,8 @@ import { bookmarksRouter } from "./bookmarks";
 import { codebooksRouter } from "./codebooks";
 import { qualitativeCodesRouter } from "./qualitativeCodes";
 import { codedExcerptsRouter } from "./codedExcerpts";
+import { affinityNodesRouter } from "./affinityNodes";
+import { tagsRouter } from "./tags";
 
 export const apiRouter = Router();
 
@@ -20,3 +22,5 @@ apiRouter.use("/bookmarks", bookmarksRouter);
 apiRouter.use("/codebooks", codebooksRouter);
 apiRouter.use("/qualitative-codes", qualitativeCodesRouter);
 apiRouter.use("/coded-excerpts", codedExcerptsRouter);
+apiRouter.use("/affinity-nodes", affinityNodesRouter);
+apiRouter.use("/tags", tagsRouter);

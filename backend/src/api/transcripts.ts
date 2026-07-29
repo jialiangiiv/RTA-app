@@ -10,7 +10,7 @@ export const transcriptsRouter = Router();
 transcriptsRouter.get("/", (req, res) => {
   const projectId = req.query.project_id as string | undefined;
   if (!projectId) return res.status(400).json({ error: "project_id query param is required" });
-  res.json(transcriptsService.listByProject(projectId));
+  res.json(transcriptsService.listSummariesByProject(projectId));
 });
 
 transcriptsRouter.get("/:id", (req, res) => {

@@ -23,9 +23,16 @@ projectsRouter.get("/:id", (req, res) => {
 });
 
 projectsRouter.post("/", (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, codebook_version } = req.body as {
+    name?: string;
+    description?: string;
+    codebook_version?: string;
+  };
   if (!name) return res.status(400).json({ error: "name is required" });
-  res.status(201).json(projectsService.create({ name, description }));
+  if (!codebook_version || !codebook_version.trim()) {
+    return res.status(400).json({ error: "codebook_version is required" });
+  }
+  res.status(201).json(projectsService.create({ name, description, codebookVersionLabel: codebook_version.trim() }));
 });
 
 projectsRouter.patch("/:id", (req, res) => {
@@ -122,20 +129,6 @@ projectsRouter.get("/:id/codebook-versions", (req, res) => {
 projectsRouter.post("/:id/codebook-versions/:codebookId/activate", (req, res) => {
   try {
     const codebook = codebooksService.setActive(req.params.id, req.params.codebookId);
-    res.json(codebook);
-  } catch (err) {
-    res.status(422).json({ error: (err as Error).message });
-  }
-});
-
-/** Labels the currently active Codebook version in place — the first step of "Compare". */
-projectsRouter.post("/:id/codebook-versions/archive", (req, res) => {
-  const { version_label, owner_name } = req.body as { version_label?: string; owner_name?: string };
-  if (!version_label || !owner_name) {
-    return res.status(400).json({ error: "version_label and owner_name are required" });
-  }
-  try {
-    const codebook = codebookVersionsService.archive(req.params.id, { version_label, owner_name });
     res.json(codebook);
   } catch (err) {
     res.status(422).json({ error: (err as Error).message });

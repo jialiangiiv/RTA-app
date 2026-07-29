@@ -15,6 +15,7 @@ export interface FinishResult {
   codesAccepted: number;
   excerptsCreated: number;
   excerptsSkipped: number;
+  excerptsByTranscript: Array<{ file_name: string; count: number }>;
 }
 
 export const codebookVersionsApi = {
@@ -24,8 +25,6 @@ export const codebookVersionsApi = {
     ),
   activate: (projectId: string, codebookId: string) =>
     apiClient.post<Codebook>(`/projects/${projectId}/codebook-versions/${codebookId}/activate`, {}),
-  archive: (projectId: string, input: { version_label: string; owner_name: string }) =>
-    apiClient.post<Codebook>(`/projects/${projectId}/codebook-versions/archive`, input),
   finish: (projectId: string, input: { version_label: string; owner_name: string; accepted: AcceptedCode[] }) =>
     apiClient.post<FinishResult>(`/projects/${projectId}/codebook-versions/finish`, input),
 };

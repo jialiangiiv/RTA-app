@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, RefObject, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useResearchQuestions } from "../hooks/useResearchQuestions";
 import { useInterviewQuestions } from "../hooks/useInterviewQuestions";
@@ -6,7 +6,7 @@ import { projectsApi } from "../api/projects";
 import { researchQuestionsApi } from "../api/researchQuestions";
 import { interviewQuestionsApi } from "../api/interviewQuestions";
 import { codebookShareApi } from "../api/codebookShare";
-import { InterviewQuestion, Project, ResearchQuestion, Transcript } from "../types/domain";
+import { InterviewQuestion, Project, ResearchQuestion, TranscriptSummary } from "../types/domain";
 import { TranscriptList } from "../components/TranscriptList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,28 @@ export function ProjectSetupPage() {
   function advanceTo(next: Step) {
     setStep((s) => (next > s ? next : s));
   }
+
+  // Each new section scrolls into view as it appears, so the user never has to hunt for it —
+  // skipped on first mount, since an existing Project shows every section at once already.
+  const rqSectionRef = useRef<HTMLDivElement>(null);
+  const iqSectionRef = useRef<HTMLDivElement>(null);
+  const docsSectionRef = useRef<HTMLDivElement>(null);
+  const codebookSectionRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const sectionRefByStep: Partial<Record<Step, RefObject<HTMLDivElement>>> = {
+      1: rqSectionRef,
+      2: iqSectionRef,
+      3: docsSectionRef,
+      4: codebookSectionRef,
+    };
+    sectionRefByStep[step]?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [step]);
 
   function handleProjectSaved(p: Project, isNew: boolean) {
     setProject(p);
@@ -74,7 +96,7 @@ export function ProjectSetupPage() {
         </Card>
 
         {step >= 1 && project && (
-          <Card className="animate-fade-in">
+          <Card ref={rqSectionRef} className="animate-fade-in">
             <CardHeader>
               <CardTitle>2. Research Questions</CardTitle>
               <CardDescription>Project-level questions your interviews are trying to answer.</CardDescription>
@@ -86,8 +108,13 @@ export function ProjectSetupPage() {
               <Separator />
               <NewRQForm projectId={project.id} nextDefaultLabel={`RQ${researchQuestions.length + 1}`} onCreated={refreshRQs} />
               {step === 1 && (
-                <div className="flex justify-end pt-2">
-                  <Button onClick={() => advanceTo(2)}>Continue</Button>
+                <div className="flex flex-col items-end gap-1 pt-2">
+                  <Button onClick={() => advanceTo(2)} disabled={researchQuestions.length === 0}>
+                    Continue
+                  </Button>
+                  {researchQuestions.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Add at least one Research Question to continue.</p>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -95,7 +122,7 @@ export function ProjectSetupPage() {
         )}
 
         {step >= 2 && project && (
-          <Card className="animate-fade-in">
+          <Card ref={iqSectionRef} className="animate-fade-in">
             <CardHeader>
               <CardTitle>3. Interview Questions</CardTitle>
               <CardDescription>The concrete questions asked in interviews, each linked to a parent RQ.</CardDescription>
@@ -113,8 +140,13 @@ export function ProjectSetupPage() {
                 </>
               )}
               {step === 2 && (
-                <div className="flex justify-end pt-2">
-                  <Button onClick={() => advanceTo(3)}>Continue</Button>
+                <div className="flex flex-col items-end gap-1 pt-2">
+                  <Button onClick={() => advanceTo(3)} disabled={interviewQuestions.length === 0}>
+                    Continue
+                  </Button>
+                  {interviewQuestions.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Add at least one Interview Question to continue.</p>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -122,7 +154,7 @@ export function ProjectSetupPage() {
         )}
 
         {step >= 3 && project && (
-          <Card className="animate-fade-in">
+          <Card ref={docsSectionRef} className="animate-fade-in">
             <CardHeader>
               <CardTitle>4. Documents</CardTitle>
               <CardDescription>Import the interview transcripts (.docx/.pdf) this project will code.</CardDescription>
@@ -132,7 +164,7 @@ export function ProjectSetupPage() {
                 projectId={project.id}
                 activeTranscriptId={null}
                 onActiveTranscriptChange={() => {}}
-                onTranscriptsLoaded={(transcripts: Transcript[]) => setTranscriptCount(transcripts.length)}
+                onTranscriptsLoaded={(transcripts: TranscriptSummary[]) => setTranscriptCount(transcripts.length)}
               />
               {step === 3 && (
                 <div className="flex justify-end pt-2">
@@ -144,7 +176,7 @@ export function ProjectSetupPage() {
         )}
 
         {step >= 4 && project && (
-          <Card className="animate-fade-in">
+          <Card ref={codebookSectionRef} className="animate-fade-in">
             <CardHeader>
               <CardTitle>5. Codebook</CardTitle>
               <CardDescription>Bring in an existing codebook, or start fresh and build one as you code.</CardDescription>
@@ -179,6 +211,7 @@ function ProjectInfoForm({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [highlightColor, setHighlightColor] = useState("#f8fc1f");
+  const [codebookVersion, setCodebookVersion] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -190,10 +223,15 @@ function ProjectInfoForm({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!project && !codebookVersion.trim()) return;
     setSaving(true);
     try {
       if (!project) {
-        const created = await projectsApi.create({ name: name.trim(), description: description.trim() || undefined });
+        const created = await projectsApi.create({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          codebook_version: codebookVersion.trim(),
+        });
         const withColor = await projectsApi.update(created.id, { highlight_color: highlightColor });
         onSaved(withColor, true);
       } else {
@@ -204,6 +242,8 @@ function ProjectInfoForm({
         });
         onSaved(updated, false);
       }
+    } catch (err) {
+      window.alert((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -213,7 +253,19 @@ function ProjectInfoForm({
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-3">
         <Label htmlFor="project-name" className="text-sm">Project name:</Label>
-        <Input id="project-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Character Cloning Study" />
+        <Input id="project-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Human Factor Study" />
+
+        {!project && (
+          <>
+            <Label htmlFor="project-codebook-version" className="text-sm">Codebook version:</Label>
+            <Input
+              id="project-codebook-version"
+              value={codebookVersion}
+              onChange={(e) => setCodebookVersion(e.target.value)}
+              placeholder="v1"
+            />
+          </>
+        )}
 
         <Label htmlFor="project-description" className="self-start pt-2 text-sm">Project description:</Label>
         <Textarea
@@ -233,10 +285,19 @@ function ProjectInfoForm({
           className="h-10 w-16 cursor-pointer rounded-md border border-input bg-background"
         />
       </div>
-      <div className="flex justify-end">
-        <Button type="submit" disabled={!name.trim() || saving} variant={isFirstStep ? "default" : "outline"} size={isFirstStep ? "default" : "sm"}>
+      <div className="flex flex-col items-end gap-1">
+        <Button
+          type="submit"
+          disabled={!name.trim() || (!project && !codebookVersion.trim()) || saving}
+          variant={isFirstStep ? "default" : "outline"}
+          size={isFirstStep ? "default" : "sm"}
+        >
           {isFirstStep ? "Continue" : "Save changes"}
         </Button>
+        {isFirstStep && !name.trim() && <p className="text-xs text-muted-foreground">Enter a project name to continue.</p>}
+        {isFirstStep && name.trim() && !codebookVersion.trim() && (
+          <p className="text-xs text-muted-foreground">Enter a codebook version (e.g. v1) to continue.</p>
+        )}
       </div>
     </form>
   );
@@ -258,8 +319,12 @@ function RQList({ researchQuestions, onChanged }: { researchQuestions: ResearchQ
             size="sm"
             className="shrink-0 text-destructive hover:text-destructive"
             onClick={async () => {
-              await researchQuestionsApi.remove(rq.id);
-              onChanged();
+              try {
+                await researchQuestionsApi.remove(rq.id);
+                onChanged();
+              } catch (err) {
+                window.alert((err as Error).message);
+              }
             }}
           >
             Remove
@@ -289,16 +354,20 @@ function NewRQForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const finalLabel = label.trim() || nextDefaultLabel;
     if (!text.trim()) return;
-    await researchQuestionsApi.create({ project_id: projectId, label: finalLabel, text: text.trim() });
-    setLabelTouched(false);
-    setText("");
-    onCreated();
+    const finalLabel = label.trim() || nextDefaultLabel;
+    try {
+      await researchQuestionsApi.create({ project_id: projectId, label: finalLabel, text: text.trim() });
+      setLabelTouched(false);
+      setText("");
+      onCreated();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
   }
 
   return (
-    <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>
+    <form className="flex flex-col gap-3 sm:flex-row sm:items-start" onSubmit={handleSubmit}>
       <Input
         className="sm:w-32"
         value={label}
@@ -314,7 +383,9 @@ function NewRQForm({
         onChange={(e) => setText(e.target.value)}
         placeholder="Full research question text"
       />
-      <Button type="submit">Add RQ</Button>
+      <Button type="submit" disabled={!text.trim()}>
+        Add RQ
+      </Button>
     </form>
   );
 }
@@ -361,8 +432,12 @@ function IQGroupedList({
                           size="sm"
                           className="shrink-0 text-destructive hover:text-destructive"
                           onClick={async () => {
-                            await interviewQuestionsApi.remove(iq.id);
-                            onChanged();
+                            try {
+                              await interviewQuestionsApi.remove(iq.id);
+                              onChanged();
+                            } catch (err) {
+                              window.alert((err as Error).message);
+                            }
                           }}
                         >
                           Remove
@@ -406,28 +481,33 @@ function NewIQForm({
   const [smallestComponent, setSmallestComponent] = useState("");
   const [selectionCriterion, setSelectionCriterion] = useState("");
   const [levelOfAbstraction, setLevelOfAbstraction] = useState("");
-  const [showOptional, setShowOptional] = useState(false);
+
+  const canSubmit = Boolean(researchQuestionId && label.trim() && text.trim());
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!researchQuestionId || !label.trim() || !text.trim()) return;
-    await interviewQuestionsApi.create({
-      project_id: projectId,
-      research_question_id: researchQuestionId,
-      label: label.trim(),
-      text: text.trim(),
-      description: description.trim() || null,
-      smallest_component: smallestComponent.trim() || null,
-      selection_criterion_definition: selectionCriterion.trim() || null,
-      level_of_abstraction: levelOfAbstraction.trim() || null,
-    });
-    setLabel("");
-    setText("");
-    setDescription("");
-    setSmallestComponent("");
-    setSelectionCriterion("");
-    setLevelOfAbstraction("");
-    onCreated();
+    if (!canSubmit) return;
+    try {
+      await interviewQuestionsApi.create({
+        project_id: projectId,
+        research_question_id: researchQuestionId,
+        label: label.trim(),
+        text: text.trim(),
+        description: description.trim() || null,
+        smallest_component: smallestComponent.trim() || null,
+        selection_criterion_definition: selectionCriterion.trim() || null,
+        level_of_abstraction: levelOfAbstraction.trim() || null,
+      });
+      setLabel("");
+      setText("");
+      setDescription("");
+      setSmallestComponent("");
+      setSelectionCriterion("");
+      setLevelOfAbstraction("");
+      onCreated();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
   }
 
   return (
@@ -448,7 +528,7 @@ function NewIQForm({
         </Select>
 
         <Label className="text-xs text-muted-foreground">Label:</Label>
-        <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. 1.1 Character Cloning" />
+        <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. 1.1 Interview Protocol Section" />
 
         <Label className="text-xs text-muted-foreground">Interview question:</Label>
         <Input
@@ -458,38 +538,35 @@ function NewIQForm({
         />
       </div>
 
-      <Button type="button" variant="link" className="h-auto p-0" onClick={() => setShowOptional((v) => !v)}>
-        {showOptional ? "Hide" : "Show"} optional metadata
+      <div className="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-2 rounded-md border p-3">
+        <Label className="text-xs text-muted-foreground">Description:</Label>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What this question is meant to explore"
+        />
+        <Label className="text-xs text-muted-foreground">Smallest component:</Label>
+        <Input
+          value={smallestComponent}
+          onChange={(e) => setSmallestComponent(e.target.value)}
+          placeholder="Smallest unit of text that can be coded, e.g. one sentence"
+        />
+        <Label className="text-xs text-muted-foreground">Selection criterion:</Label>
+        <Input
+          value={selectionCriterion}
+          onChange={(e) => setSelectionCriterion(e.target.value)}
+          placeholder="How to decide a passage counts as an instance of this"
+        />
+        <Label className="text-xs text-muted-foreground">Level of abstraction:</Label>
+        <Input
+          value={levelOfAbstraction}
+          onChange={(e) => setLevelOfAbstraction(e.target.value)}
+          placeholder="e.g. Descriptive, Interpretive, Conceptual"
+        />
+      </div>
+      <Button type="submit" disabled={!canSubmit}>
+        Add IQ
       </Button>
-      {showOptional && (
-        <div className="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-2 rounded-md border p-3">
-          <Label className="text-xs text-muted-foreground">Description:</Label>
-          <Input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="What this question is meant to explore"
-          />
-          <Label className="text-xs text-muted-foreground">Smallest component:</Label>
-          <Input
-            value={smallestComponent}
-            onChange={(e) => setSmallestComponent(e.target.value)}
-            placeholder="Smallest unit of text that can be coded, e.g. one sentence"
-          />
-          <Label className="text-xs text-muted-foreground">Selection criterion:</Label>
-          <Input
-            value={selectionCriterion}
-            onChange={(e) => setSelectionCriterion(e.target.value)}
-            placeholder="How to decide a passage counts as an instance of this"
-          />
-          <Label className="text-xs text-muted-foreground">Level of abstraction:</Label>
-          <Input
-            value={levelOfAbstraction}
-            onChange={(e) => setLevelOfAbstraction(e.target.value)}
-            placeholder="e.g. Descriptive, Interpretive, Conceptual"
-          />
-        </div>
-      )}
-      <Button type="submit">Add IQ</Button>
     </form>
   );
 }

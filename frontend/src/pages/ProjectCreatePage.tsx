@@ -33,6 +33,22 @@ export function ProjectCreatePage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card
+          className="animate-fade-in cursor-pointer transition-shadow hover:shadow-md [animation-delay:120ms]"
+          onClick={() => navigate("/projects/new/setup")}
+        >
+          <CardHeader>
+            <PenLine className="mb-2 h-6 w-6 text-brand" />
+            <CardTitle className="text-lg">Set Up Manually</CardTitle>
+            <CardDescription>Name your project, then define Research Questions, Interview Questions, and an optional Codebook.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" variant="outline">
+              Get Started
+            </Button>
+          </CardContent>
+        </Card>
+        
+        <Card
           className="animate-fade-in cursor-pointer transition-shadow hover:shadow-md [animation-delay:60ms]"
           onClick={() => fileInputRef.current?.click()}
         >
@@ -52,22 +68,6 @@ export function ProjectCreatePage() {
             />
             <Button type="button" variant="outline" disabled={importing} onClick={(e) => e.stopPropagation()}>
               {importing ? "Importing…" : "Choose .json file"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="animate-fade-in cursor-pointer transition-shadow hover:shadow-md [animation-delay:120ms]"
-          onClick={() => navigate("/projects/new/setup")}
-        >
-          <CardHeader>
-            <PenLine className="mb-2 h-6 w-6 text-brand" />
-            <CardTitle className="text-lg">Set Up Manually</CardTitle>
-            <CardDescription>Name your project, then define Research Questions, Interview Questions, and an optional Codebook.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button type="button" variant="outline">
-              Get Started
             </Button>
           </CardContent>
         </Card>

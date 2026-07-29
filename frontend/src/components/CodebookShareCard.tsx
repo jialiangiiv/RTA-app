@@ -2,7 +2,7 @@ import { ChangeEvent, useRef, useState } from "react";
 import { Loader2, ChevronDown } from "lucide-react";
 import { codebookShareApi, CodebookShareBundle, CodebookShareImportResult } from "../api/codebookShare";
 import { codebooksApi } from "../api/codebooks";
-import { Project, Transcript } from "../types/domain";
+import { Project, TranscriptSummary } from "../types/domain";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -11,7 +11,8 @@ interface CodebookShareCardProps {
   projectId: string;
   project: Project | null;
   ownCodebookId: string | null;
-  transcripts: Transcript[];
+  ownCodebookVersionLabel: string | null;
+  transcripts: TranscriptSummary[];
   onImported: () => void;
 }
 
@@ -43,7 +44,14 @@ function normalize(s: string): string {
  * human-readable name (transcript file name, code name, Interview Question label) rather than
  * database ids, since the importer holds their own separate database. Never touches Bookmarks.
  */
-export function CodebookShareCard({ projectId, project, ownCodebookId, transcripts, onImported }: CodebookShareCardProps) {
+export function CodebookShareCard({
+  projectId,
+  project,
+  ownCodebookId,
+  ownCodebookVersionLabel,
+  transcripts,
+  onImported,
+}: CodebookShareCardProps) {
   const [step, setStep] = useState<Step | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -163,6 +171,12 @@ export function CodebookShareCard({ projectId, project, ownCodebookId, transcrip
                       <span className="truncate">{f.imported}</span>
                     </div>
                   ))}
+                  {/* Informational only — differing codebook versions are expected, not a mismatch to warn about. */}
+                  <div className="grid grid-cols-[7rem_1fr_1fr] gap-2">
+                    <span className="text-muted-foreground">Codebook version</span>
+                    <span className="truncate">{ownCodebookVersionLabel ?? "—"}</span>
+                    <span className="truncate">{step.bundle.project.codebook_version ?? "—"}</span>
+                  </div>
                 </div>
 
                 <div>

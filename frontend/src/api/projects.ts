@@ -5,7 +5,8 @@ export const projectsApi = {
   list: () => apiClient.get<Project[]>("/projects"),
   listComparisonSources: () => apiClient.get<Project[]>("/projects/comparison-sources"),
   get: (id: string) => apiClient.get<Project>(`/projects/${id}`),
-  create: (input: { name: string; description?: string }) => apiClient.post<Project>("/projects", input),
+  create: (input: { name: string; description?: string; codebook_version: string }) =>
+    apiClient.post<Project>("/projects", input),
   update: (id: string, updates: Partial<Project>) => apiClient.patch<Project>(`/projects/${id}`, updates),
   remove: (id: string) => apiClient.delete<void>(`/projects/${id}`),
   move: (id: string, direction: "up" | "down") => apiClient.post<Project[]>(`/projects/${id}/move`, { direction }),

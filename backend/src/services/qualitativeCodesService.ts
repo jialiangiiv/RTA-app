@@ -1,6 +1,7 @@
 import { db } from "../core/db";
 import { newId, nowIso } from "../core/ids";
 import { QualitativeCode } from "../models/types";
+import { affinityNodesService } from "./affinityNodesService";
 
 /** Codes are scoped per-Codebook, not per-Project — a comparison Codebook is expected to share
  *  names with the user's own codes (that's the point of comparing), so uniqueness only applies
@@ -71,5 +72,6 @@ export const qualitativeCodesService = {
 
   remove(id: string): void {
     db.prepare("DELETE FROM qualitative_codes WHERE id = ?").run(id);
+    affinityNodesService.removeByRef("code", id);
   },
 };

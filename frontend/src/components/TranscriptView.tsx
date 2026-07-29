@@ -4,6 +4,7 @@ import { qualitativeCodesApi } from "../api/codebooks";
 import { buildSegments, textOffsetWithin } from "../lib/transcriptSegments";
 import { TranscriptSegments } from "./TranscriptSegments";
 import { CodeSelectPopover } from "./CodeSelectPopover";
+import { HighlightHoverCard } from "./HighlightHoverCard";
 import { Bookmark, CodedExcerpt, QualitativeCode, Transcript } from "../types/domain";
 
 interface TranscriptViewProps {
@@ -26,6 +27,13 @@ interface PendingSelection {
   popoverPosition: { top: number; left: number };
 }
 
+interface HoveredExcerpt {
+  excerpt: CodedExcerpt;
+  rect: DOMRect;
+}
+
+const HOVER_CLOSE_DELAY = 150;
+
 export function TranscriptView({
   transcript,
   codedExcerpts,
@@ -41,10 +49,29 @@ export function TranscriptView({
 }: TranscriptViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
+  const [hoveredExcerpt, setHoveredExcerpt] = useState<HoveredExcerpt | null>(null);
+  const hoverCloseTimeout = useRef<number | null>(null);
   const segments = useMemo(
     () => buildSegments(transcript.raw_text, codedExcerpts, bookmarks),
     [transcript.raw_text, codedExcerpts, bookmarks]
   );
+
+  function cancelHoverClose() {
+    if (hoverCloseTimeout.current !== null) {
+      window.clearTimeout(hoverCloseTimeout.current);
+      hoverCloseTimeout.current = null;
+    }
+  }
+
+  function scheduleHoverClose() {
+    cancelHoverClose();
+    hoverCloseTimeout.current = window.setTimeout(() => setHoveredExcerpt(null), HOVER_CLOSE_DELAY);
+  }
+
+  function handleHoverExcerpt(excerpt: CodedExcerpt, rect: DOMRect) {
+    cancelHoverClose();
+    setHoveredExcerpt({ excerpt, rect });
+  }
 
   function handleMouseUp() {
     const container = containerRef.current;
@@ -98,13 +125,13 @@ export function TranscriptView({
     onExcerptsChanged();
   }
 
-  async function handleCreateAndApply(label: string) {
+  async function handleCreateAndApply(label: string, description: string) {
     if (!ownCodebookId) return;
     try {
       const created = await qualitativeCodesApi.create({
         codebook_id: ownCodebookId,
         label,
-        description: label,
+        description: description || label,
         theme: null,
         example_quote: null,
         color: null,
@@ -135,9 +162,9 @@ export function TranscriptView({
       >
         <TranscriptSegments
           segments={segments}
-          qualitativeCodesById={qualitativeCodesById}
           highlightColor={highlightColor}
-          onRemoveExcerpt={handleRemoveExcerpt}
+          onHoverExcerpt={handleHoverExcerpt}
+          onUnhoverExcerpt={scheduleHoverClose}
         />
       </div>
       {pendingSelection && (
@@ -147,6 +174,28 @@ export function TranscriptView({
           onSelect={(code) => applyCode(code.id)}
           onCreateNew={handleCreateAndApply}
           onClose={closePopover}
+        />
+      )}
+      {hoveredExcerpt && (
+        <HighlightHoverCard
+          key={hoveredExcerpt.excerpt.id}
+          position={{
+            top: hoveredExcerpt.rect.bottom + window.scrollY + 6,
+            left: hoveredExcerpt.rect.left + window.scrollX,
+          }}
+          qCode={qualitativeCodesById[hoveredExcerpt.excerpt.qualitative_code_id]}
+          memo={hoveredExcerpt.excerpt.memo}
+          onSave={async (updates) => {
+            await qualitativeCodesApi.update(hoveredExcerpt.excerpt.qualitative_code_id, updates);
+            onCodesChanged();
+          }}
+          onDelete={() => {
+            handleRemoveExcerpt(hoveredExcerpt.excerpt.id);
+            setHoveredExcerpt(null);
+          }}
+          onClose={() => setHoveredExcerpt(null)}
+          onMouseEnter={cancelHoverClose}
+          onMouseLeave={scheduleHoverClose}
         />
       )}
     </div>

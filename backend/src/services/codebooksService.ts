@@ -85,15 +85,6 @@ export const codebooksService = {
     return codebook;
   },
 
-  /** Labels a Codebook version in place — used when archiving the currently active one. */
-  rename(id: string, updates: { name: string; version_label: string }): Codebook {
-    const existing = this.get(id);
-    if (!existing) throw new Error("Codebook not found");
-    const updated = { ...existing, ...updates };
-    db.prepare("UPDATE codebooks SET name = @name, version_label = @version_label WHERE id = @id").run(updated);
-    return updated;
-  },
-
   /** Deep-copies a Codebook's QualitativeCodes and their CodedExcerpts into a brand-new Codebook version. */
   clone(sourceCodebookId: string, target: { name: string; version_label: string; created_by?: string | null }): Codebook {
     const source = this.get(sourceCodebookId);

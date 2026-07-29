@@ -96,6 +96,46 @@ CREATE TABLE IF NOT EXISTS coded_excerpts (
   created_at TEXT NOT NULL
 );
 
+-- Affinity Map / Axial Coding Board: one canvas-position row per visual node. node_type
+-- discriminates: 'rq_lane' and 'code' wrap an existing research_question/qualitative_code
+-- (ref_id points at it; label/body unused, display text comes from the referenced row);
+-- 'unsorted' is a single auto-created top-level bin per project holding ungrouped codes;
+-- 'section'/'theme'/'note' are freeform, user-created containers/content (label/body/font_size
+-- used, ref_id NULL). parent_id expresses nesting (Code -> Theme -> Section -> RQ lane); set
+-- NULL on parent deletion so children fall back to top-level rather than disappearing.
+CREATE TABLE IF NOT EXISTS affinity_nodes (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  node_type TEXT NOT NULL, -- 'rq_lane' | 'section' | 'theme' | 'code' | 'note' | 'unsorted'
+  parent_id TEXT REFERENCES affinity_nodes(id) ON DELETE SET NULL,
+  ref_id TEXT, -- qualitative_codes.id (node_type='code') or research_questions.id (node_type='rq_lane'); else NULL
+  label TEXT, -- section/theme name, or note title; NULL for code/rq_lane/unsorted
+  body TEXT, -- freeform note text; NULL for all other node_types
+  pos_x REAL NOT NULL DEFAULT 0,
+  pos_y REAL NOT NULL DEFAULT 0,
+  width REAL,
+  height REAL,
+  font_size REAL, -- only meaningful for node_type='note'
+  color TEXT,
+  z_index INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tags (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  color TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS affinity_node_tags (
+  affinity_node_id TEXT NOT NULL REFERENCES affinity_nodes(id) ON DELETE CASCADE,
+  tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (affinity_node_id, tag_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_research_questions_project ON research_questions(project_id);
 CREATE INDEX IF NOT EXISTS idx_interview_questions_project ON interview_questions(project_id);
 CREATE INDEX IF NOT EXISTS idx_interview_questions_rq ON interview_questions(research_question_id);
@@ -105,3 +145,11 @@ CREATE INDEX IF NOT EXISTS idx_codebooks_project ON codebooks(project_id);
 CREATE INDEX IF NOT EXISTS idx_qualitative_codes_codebook ON qualitative_codes(codebook_id);
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_transcript ON coded_excerpts(transcript_id);
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_iq ON coded_excerpts(interview_question_id);
+CREATE INDEX IF NOT EXISTS idx_coded_excerpts_code ON coded_excerpts(qualitative_code_id);
+CREATE INDEX IF NOT EXISTS idx_affinity_nodes_project ON affinity_nodes(project_id);
+CREATE INDEX IF NOT EXISTS idx_affinity_nodes_parent ON affinity_nodes(parent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_affinity_nodes_ref
+  ON affinity_nodes(project_id, node_type, ref_id) WHERE ref_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tags_project ON tags(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_project_name ON tags(project_id, LOWER(name));
+CREATE INDEX IF NOT EXISTS idx_affinity_node_tags_tag ON affinity_node_tags(tag_id);

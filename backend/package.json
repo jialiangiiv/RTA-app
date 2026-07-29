@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('src/models/schema.sql','dist/models/schema.sql')\"",
     "start": "node dist/server.js",
     "migrate": "tsx src/models/migrate.ts",
     "test": "vitest run"

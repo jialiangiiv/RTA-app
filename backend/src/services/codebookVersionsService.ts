@@ -21,23 +21,17 @@ export interface FinishResult {
   codesAccepted: number;
   excerptsCreated: number;
   excerptsSkipped: number;
+  /** How many CodedExcerpts landed in each Transcript — for the "N excerpts into P1.docx, M into P2.docx" summary. */
+  excerptsByTranscript: Array<{ file_name: string; count: number }>;
 }
 
 /**
- * Backs the "Compare" workflow: archiving labels the currently active Codebook in place (a
- * pure rename, so nothing is duplicated until a merge actually happens); finishing clones that
- * labeled Codebook into a new version, adds whichever codes the user accepted from the
- * imported side, and makes the result the new active version.
+ * Backs the "Compare" workflow: finishing clones the Project's currently active Codebook into a
+ * new version (the clone itself IS the archival point — no separate rename step needed), adds
+ * whichever codes the user accepted from the imported side, and makes the result the new active
+ * version.
  */
 export const codebookVersionsService = {
-  archive(projectId: string, input: { version_label: string; owner_name: string }): Codebook {
-    const active = codebooksService.ensureOwnCodebook(projectId);
-    return codebooksService.rename(active.id, {
-      version_label: input.version_label,
-      name: `${input.version_label} — ${input.owner_name}`,
-    });
-  },
-
   finish(
     projectId: string,
     input: { version_label: string; owner_name: string; accepted: AcceptedCode[] }
@@ -111,6 +105,8 @@ export const codebookVersionsService = {
           return existingKeysByTranscript.get(transcriptId)!;
         }
 
+        const createdByTranscript = new Map<string, number>();
+
         for (const accepted of input.accepted) {
           const key = accepted.code_name.trim().toLowerCase();
           const localCodeId = codeNameToId.get(key);
@@ -149,21 +145,23 @@ export const codebookVersionsService = {
             });
             keys.add(dedupeKey);
             excerptsCreated++;
+            createdByTranscript.set(transcript.file_name, (createdByTranscript.get(transcript.file_name) ?? 0) + 1);
           }
         }
+
+        projectsService.setActiveCodebook(projectId, cloned.id);
+
+        return {
+          codebook: cloned,
+          codesCarried: priorCodeCount,
+          codesAccepted,
+          excerptsCreated,
+          excerptsSkipped,
+          excerptsByTranscript: Array.from(createdByTranscript, ([file_name, count]) => ({ file_name, count })),
+        };
       } catch (err) {
         throw new Error(`Failed while finishing comparison: ${(err as Error).message}`);
       }
-
-      projectsService.setActiveCodebook(projectId, cloned.id);
-
-      return {
-        codebook: cloned,
-        codesCarried: priorCodeCount,
-        codesAccepted,
-        excerptsCreated,
-        excerptsSkipped,
-      };
     })();
   },
 };

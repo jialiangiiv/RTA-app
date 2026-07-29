@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { transcriptsApi } from "../api/transcripts";
-import { Transcript } from "../types/domain";
+import { TranscriptSummary } from "../types/domain";
 
 export function useTranscripts(projectId: string) {
-  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscriptSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

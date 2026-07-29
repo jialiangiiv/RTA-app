@@ -11,10 +11,13 @@ export interface TranscriptTag {
 
 interface TaggedTranscriptProps {
   rawText: string;
-  tags: TranscriptTag[];
-  tagClassName: string;
+  leftTags: TranscriptTag[];
+  rightTags: TranscriptTag[];
   highlightColor: string;
-  renderActions?: (tag: TranscriptTag) => ReactNode;
+  leftTagClassName: string;
+  rightTagClassName: string;
+  renderLeftActions?: (tag: TranscriptTag) => ReactNode;
+  renderRightActions?: (tag: TranscriptTag) => ReactNode;
 }
 
 const TAG_HEIGHT = 30;
@@ -41,68 +44,76 @@ function locateOffset(root: Node, charOffset: number): { node: Node; offset: num
   return result ?? { node: root, offset: 0 };
 }
 
+/** Greedily pushes down any tag whose measured top would collide with the one above it. */
+function stackPositions(items: Array<{ key: string; top: number }>): Record<string, number> {
+  const sorted = [...items].sort((a, b) => a.top - b.top);
+  let lastTop = -Infinity;
+  const next: Record<string, number> = {};
+  for (const item of sorted) {
+    const top = Math.max(item.top, lastTop + TAG_HEIGHT);
+    next[item.key] = top;
+    lastTop = top;
+  }
+  return next;
+}
+
 /**
- * Renders plain transcript text with small margin tags beside each tagged span (rather than an
- * inline background highlight) — hovering a tag temporarily highlights its exact text inline and
+ * Renders ONE plain transcript text column with small margin tags on either side — left for the
+ * user's own codes, right for an imported/candidate codebook's — rather than two separate copies
+ * of the text. Hovering a tag (either side) temporarily highlights its exact span inline and
  * reveals a popup with the code's name, definition, and any actions (edit/accept).
  */
-export function TaggedTranscript({ rawText, tags, tagClassName, highlightColor, renderActions }: TaggedTranscriptProps) {
+export function TaggedTranscript({
+  rawText,
+  leftTags,
+  rightTags,
+  highlightColor,
+  leftTagClassName,
+  rightTagClassName,
+  renderLeftActions,
+  renderRightActions,
+}: TaggedTranscriptProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [positions, setPositions] = useState<Record<string, number>>({});
+  const [leftPositions, setLeftPositions] = useState<Record<string, number>>({});
+  const [rightPositions, setRightPositions] = useState<Record<string, number>>({});
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     function recompute() {
-      const container = containerRef.current;
-      if (!container) return;
+      const containerMaybeNull = containerRef.current;
+      if (!containerMaybeNull) return;
+      const container: HTMLDivElement = containerMaybeNull;
       const containerRect = container.getBoundingClientRect();
 
-      const raw = tags.map((tag) => {
-        const { node, offset } = locateOffset(container, tag.start_offset);
-        const range = document.createRange();
-        range.setStart(node, offset);
-        range.collapse(true);
-        const rect = range.getBoundingClientRect();
-        return { key: tag.key, top: rect.top - containerRect.top + container.scrollTop };
-      });
-
-      raw.sort((a, b) => a.top - b.top);
-      let lastTop = -Infinity;
-      const next: Record<string, number> = {};
-      for (const item of raw) {
-        const top = Math.max(item.top, lastTop + TAG_HEIGHT);
-        next[item.key] = top;
-        lastTop = top;
+      function measure(tags: TranscriptTag[]) {
+        return tags.map((tag) => {
+          const { node, offset } = locateOffset(container, tag.start_offset);
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.collapse(true);
+          const rect = range.getBoundingClientRect();
+          return { key: tag.key, top: rect.top - containerRect.top + container.scrollTop };
+        });
       }
-      setPositions(next);
+
+      setLeftPositions(stackPositions(measure(leftTags)));
+      setRightPositions(stackPositions(measure(rightTags)));
     }
 
     recompute();
     window.addEventListener("resize", recompute);
     return () => window.removeEventListener("resize", recompute);
-  }, [tags, rawText]);
+  }, [leftTags, rightTags, rawText]);
 
-  const hovered = tags.find((t) => t.key === hoveredKey) ?? null;
+  const hovered = [...leftTags, ...rightTags].find((t) => t.key === hoveredKey) ?? null;
 
-  return (
-    <div className="relative flex gap-4">
-      <div ref={containerRef} className="min-w-0 flex-1 [white-space:pre-wrap]">
-        {hovered ? (
-          <>
-            {rawText.slice(0, hovered.start_offset)}
-            <mark
-              className="rounded-sm py-0.5 [mix-blend-mode:multiply]"
-              style={{ backgroundColor: highlightColor }}
-            >
-              {rawText.slice(hovered.start_offset, hovered.end_offset)}
-            </mark>
-            {rawText.slice(hovered.end_offset)}
-          </>
-        ) : (
-          rawText
-        )}
-      </div>
-
+  function renderColumn(
+    tags: TranscriptTag[],
+    positions: Record<string, number>,
+    tagClassName: string,
+    renderActions?: (tag: TranscriptTag) => ReactNode
+  ) {
+    return (
       <div className="relative w-44 shrink-0">
         {tags.map((tag) => (
           <div
@@ -131,6 +142,28 @@ export function TaggedTranscript({ rawText, tags, tagClassName, highlightColor, 
           </div>
         ))}
       </div>
+    );
+  }
+
+  return (
+    <div className="relative flex gap-4">
+      {renderColumn(leftTags, leftPositions, leftTagClassName, renderLeftActions)}
+
+      <div ref={containerRef} className="min-w-0 flex-1 [white-space:pre-wrap]">
+        {hovered ? (
+          <>
+            {rawText.slice(0, hovered.start_offset)}
+            <mark className="rounded-sm py-0.5 [mix-blend-mode:multiply]" style={{ backgroundColor: highlightColor }}>
+              {rawText.slice(hovered.start_offset, hovered.end_offset)}
+            </mark>
+            {rawText.slice(hovered.end_offset)}
+          </>
+        ) : (
+          rawText
+        )}
+      </div>
+
+      {renderColumn(rightTags, rightPositions, rightTagClassName, renderRightActions)}
     </div>
   );
 }

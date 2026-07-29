@@ -59,6 +59,9 @@ export interface Transcript {
   notes: string | null;
 }
 
+/** Transcript minus raw_text — what the list endpoint returns; fetch the full Transcript by id when the body is needed. */
+export type TranscriptSummary = Omit<Transcript, "raw_text">;
+
 export interface Bookmark {
   id: string;
   transcript_id: string;
@@ -103,4 +106,42 @@ export interface CodedExcerpt {
   end_offset: number;
   memo: string | null;
   created_at: string;
+}
+
+export type AffinityNodeType = "rq_lane" | "section" | "theme" | "code" | "note" | "unsorted";
+
+/** One canvas-position row per visual node on the Affinity Map / Axial Coding board. 'rq_lane'
+ *  and 'code' wrap an existing ResearchQuestion/QualitativeCode via ref_id (display text comes
+ *  from the referenced row); 'section'/'theme'/'note' are freeform and own label/body/font_size;
+ *  'unsorted' is a single auto-created top-level bin per project. parent_id expresses nesting. */
+export interface AffinityNode {
+  id: string;
+  project_id: string;
+  node_type: AffinityNodeType;
+  parent_id: string | null;
+  ref_id: string | null;
+  label: string | null;
+  body: string | null;
+  pos_x: number;
+  pos_y: number;
+  width: number | null;
+  height: number | null;
+  font_size: number | null;
+  color: string | null;
+  z_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Tag {
+  id: string;
+  project_id: string;
+  name: string;
+  color: string | null;
+  created_at: string;
+}
+
+export interface AffinityNodeTag {
+  affinity_node_id: string;
+  tag_id: string;
 }

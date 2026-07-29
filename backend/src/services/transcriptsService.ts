@@ -3,7 +3,7 @@ import pdfParse from "pdf-parse";
 import { db } from "../core/db";
 import { newId, nowIso } from "../core/ids";
 import { logger } from "../core/logger";
-import { Transcript } from "../models/types";
+import { Transcript, TranscriptSummary } from "../models/types";
 
 /** Extracts plain text from an imported transcript file. Original formatting is discarded. */
 async function extractRawText(fileName: string, fileBuffer: Buffer): Promise<string> {
@@ -20,8 +20,17 @@ async function extractRawText(fileName: string, fileBuffer: Buffer): Promise<str
 }
 
 export const transcriptsService = {
+  /** Full rows including raw_text — for callers that actually read the transcript body (export/import/coding). */
   listByProject(projectId: string): Transcript[] {
     return db.prepare("SELECT * FROM transcripts WHERE project_id = ?").all(projectId) as Transcript[];
+  },
+
+  /** Sidebar/list views only ever show title and file_name — this skips raw_text so a project
+   *  with many or large transcripts doesn't ship every transcript's full body just to list them. */
+  listSummariesByProject(projectId: string): TranscriptSummary[] {
+    return db
+      .prepare("SELECT id, project_id, title, file_name, created_at, notes FROM transcripts WHERE project_id = ?")
+      .all(projectId) as TranscriptSummary[];
   },
 
   get(id: string): Transcript | undefined {

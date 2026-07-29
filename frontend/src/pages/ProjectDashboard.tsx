@@ -2,12 +2,14 @@ import { MouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { ChevronUp, ChevronDown, Plus } from "lucide-react";
 import { useProjects } from "../hooks/useProjects";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { projectsApi } from "../api/projects";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 
 export function ProjectDashboard() {
   const { projects, loading, error, refresh } = useProjects();
+  const { user } = useCurrentUser();
 
   async function handleDelete(e: MouseEvent, projectId: string, name: string) {
     e.stopPropagation();
@@ -27,8 +29,11 @@ export function ProjectDashboard() {
       {/* Page title + the one primary action, in the same row — a familiar dashboard pattern. */}
       <header className="mb-8 flex animate-fade-in items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-4xl">Reflexive Thematic Analysis</h1>
-          <p className="text-muted-foreground">Your projects, kept locally on this machine.</p>
+          <h1 className="text-5xl">Hi{user?.display_name.trim() ? `, ${user.display_name}` : ""}</h1>
+          <p className="text-sm text-muted-foreground">
+            Reflexive Thematic Analysis — you can create a project or choose one of your projects to start your
+            reflexive thematic analysis.
+          </p>
         </div>
         <Button asChild size="lg" className="shrink-0 gap-1.5">
           <Link to="/projects/new">

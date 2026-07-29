@@ -1,6 +1,6 @@
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { codebookVersionsApi, AcceptedCode } from "../api/codebookVersions";
+import { codebookVersionsApi, AcceptedCode, FinishResult } from "../api/codebookVersions";
 import { codebookShareApi, CodebookShareBundle } from "../api/codebookShare";
 import { qualitativeCodesApi } from "../api/codebooks";
 import { CodedExcerpt, QualitativeCode, Transcript } from "../types/domain";
@@ -19,19 +19,18 @@ interface CompareViewProps {
   leftQualitativeCodesById: Record<string, QualitativeCode>;
   highlightColor: string;
   onExit: () => void;
-  onArchived: () => void;
   onFinished: () => void;
 }
 
 type EditTarget = { side: "left" | "right"; key: string; label: string; definition: string };
 
 type Phase =
-  | { kind: "archive-prompt" }
   | { kind: "import-prompt" }
+  | { kind: "import-summary"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "comparing"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "finish-prompt"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "finishing" }
-  | { kind: "done"; codesAccepted: number; excerptsCreated: number; excerptsSkipped: number }
+  | { kind: "done"; result: FinishResult }
   | { kind: "error"; message: string };
 
 function keyOf(codeName: string): string {
@@ -46,12 +45,9 @@ export function CompareView({
   leftQualitativeCodesById,
   highlightColor,
   onExit,
-  onArchived,
   onFinished,
 }: CompareViewProps) {
-  const [phase, setPhase] = useState<Phase>({ kind: "archive-prompt" });
-  const [versionLabel, setVersionLabel] = useState("");
-  const [archiveOwnerName, setArchiveOwnerName] = useState(currentUserDisplayName);
+  const [phase, setPhase] = useState<Phase>({ kind: "import-prompt" });
   const [importedOwnerName, setImportedOwnerName] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -63,20 +59,6 @@ export function CompareView({
   const [finishVersionLabel, setFinishVersionLabel] = useState("");
   const [finishOwnerName, setFinishOwnerName] = useState("");
 
-  async function submitArchive() {
-    if (!versionLabel.trim()) return;
-    try {
-      await codebookVersionsApi.archive(projectId, {
-        version_label: versionLabel.trim(),
-        owner_name: archiveOwnerName.trim() || currentUserDisplayName,
-      });
-      onArchived();
-      setPhase({ kind: "import-prompt" });
-    } catch (err) {
-      setPhase({ kind: "error", message: (err as Error).message });
-    }
-  }
-
   function handlePickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) setPendingFile(file);
@@ -87,11 +69,19 @@ export function CompareView({
     setImportError(null);
     try {
       const bundle = await codebookShareApi.parseFile(pendingFile);
-      setPhase({ kind: "comparing", bundle, ownerName: importedOwnerName.trim() });
+      setPhase({ kind: "import-summary", bundle, ownerName: importedOwnerName.trim() });
       setFinishOwnerName(`${currentUserDisplayName} + ${importedOwnerName.trim()}`);
     } catch {
       setImportError("Couldn't read that file — is it a Codebook Share export (.json)?");
     }
+  }
+
+  function excerptCountsByTranscript(bundle: CodebookShareBundle): Array<{ file_name: string; count: number }> {
+    const counts = new Map<string, number>();
+    for (const excerpt of bundle.coded_excerpts) {
+      counts.set(excerpt.transcript_file_name, (counts.get(excerpt.transcript_file_name) ?? 0) + 1);
+    }
+    return Array.from(counts, ([file_name, count]) => ({ file_name, count }));
   }
 
   function toggleAccept(codeName: string) {
@@ -154,12 +144,7 @@ export function CompareView({
         owner_name: finishOwnerName.trim(),
         accepted,
       });
-      setPhase({
-        kind: "done",
-        codesAccepted: result.codesAccepted,
-        excerptsCreated: result.excerptsCreated,
-        excerptsSkipped: result.excerptsSkipped,
-      });
+      setPhase({ kind: "done", result });
       onFinished();
     } catch (err) {
       setPhase({ kind: "error", message: (err as Error).message });
@@ -225,103 +210,109 @@ export function CompareView({
       )}
 
       {comparing && (
-        <div className="grid grid-cols-2 gap-6 rounded-md border bg-card p-4">
-          <div>
-            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">You</h4>
-            <TaggedTranscript
-              rawText={activeTranscript.raw_text}
-              tags={leftTags}
-              tagClassName="border-border bg-muted hover:bg-accent"
-              highlightColor={highlightColor}
-              renderActions={(tag) => (
+        <div className="rounded-md border bg-card p-4">
+          <div className="mb-3 flex justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>Your codes</span>
+            <span>Imported codes</span>
+          </div>
+          <TaggedTranscript
+            rawText={activeTranscript.raw_text}
+            leftTags={leftTags}
+            rightTags={rightTags}
+            leftTagClassName="border-border bg-muted hover:bg-accent"
+            rightTagClassName="border-brand/40 bg-brand/10 hover:bg-brand/20"
+            highlightColor={highlightColor}
+            renderLeftActions={(tag) => (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditTarget({ side: "left", key: tag.key, label: tag.label, definition: tag.definition })}
+              >
+                Edit
+              </Button>
+            )}
+            renderRightActions={(tag) => (
+              <>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setEditTarget({ side: "left", key: tag.key, label: tag.label, definition: tag.definition })}
+                  onClick={() => setEditTarget({ side: "right", key: keyOf(tag.label), label: tag.label, definition: tag.definition })}
                 >
                   Edit
                 </Button>
-              )}
-            />
-          </div>
-          <div>
-            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Imported</h4>
-            <TaggedTranscript
-              rawText={activeTranscript.raw_text}
-              tags={rightTags}
-              tagClassName="border-brand/40 bg-brand/10 hover:bg-brand/20"
-              highlightColor={highlightColor}
-              renderActions={(tag) => (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setEditTarget({ side: "right", key: keyOf(tag.label), label: tag.label, definition: tag.definition })}
-                  >
-                    Edit
-                  </Button>
-                  <Button size="sm" variant={tag.accepted ? "secondary" : "default"} onClick={() => toggleAccept(tag.label)}>
-                    {tag.accepted ? "Accepted ✓" : "Accept"}
-                  </Button>
-                </>
-              )}
-            />
-          </div>
+                <Button size="sm" variant={tag.accepted ? "secondary" : "default"} onClick={() => toggleAccept(tag.label)}>
+                  {tag.accepted ? "Accepted ✓" : "Accept"}
+                </Button>
+              </>
+            )}
+          />
         </div>
       )}
 
-      <Dialog open={phase.kind === "archive-prompt" || phase.kind === "import-prompt"} onOpenChange={(open) => !open && onExit()}>
+      <Dialog open={phase.kind === "import-prompt"} onOpenChange={(open) => !open && onExit()}>
         <DialogContent>
-          {phase.kind === "archive-prompt" && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Archive your current codebook</DialogTitle>
-                <DialogDescription>Give this point in your coding a version name before comparing.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="archive-version">Version</Label>
-                  <Input id="archive-version" value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} placeholder="e.g. v1" autoFocus />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="archive-owner">Your name</Label>
-                  <Input id="archive-owner" value={archiveOwnerName} onChange={(e) => setArchiveOwnerName(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={onExit}>
-                  Cancel
-                </Button>
-                <Button size="sm" disabled={!versionLabel.trim()} onClick={submitArchive}>
-                  Archive &amp; Continue
-                </Button>
-              </DialogFooter>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle>Import a codebook to compare</DialogTitle>
+            <DialogDescription>Pick their exported Codebook (.json) and name who it belongs to.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
+            <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
+              {pendingFile ? pendingFile.name : "Choose .json file"}
+            </Button>
+            <div className="space-y-1">
+              <Label htmlFor="import-owner">Codebook owner's name</Label>
+              <Input id="import-owner" value={importedOwnerName} onChange={(e) => setImportedOwnerName(e.target.value)} placeholder="e.g. Alice" />
+            </div>
+            {importError && <p className="text-xs text-destructive">{importError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={onExit}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={!pendingFile || !importedOwnerName.trim()} onClick={submitImport}>
+              Start Comparing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {phase.kind === "import-prompt" && (
+      <Dialog open={phase.kind === "import-summary"} onOpenChange={(open) => !open && onExit()}>
+        <DialogContent>
+          {phase.kind === "import-summary" && (
             <>
               <DialogHeader>
-                <DialogTitle>Import a codebook to compare</DialogTitle>
-                <DialogDescription>Pick their exported Codebook (.json) and name who it belongs to.</DialogDescription>
+                <DialogTitle>Codebook imported</DialogTitle>
+                <DialogDescription>
+                  {phase.bundle.codes.length} code{phase.bundle.codes.length === 1 ? "" : "s"} imported from{" "}
+                  {phase.ownerName} ({phase.bundle.project.name}).
+                </DialogDescription>
               </DialogHeader>
-              <div className="space-y-3">
-                <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
-                <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
-                  {pendingFile ? pendingFile.name : "Choose .json file"}
-                </Button>
-                <div className="space-y-1">
-                  <Label htmlFor="import-owner">Codebook owner's name</Label>
-                  <Input id="import-owner" value={importedOwnerName} onChange={(e) => setImportedOwnerName(e.target.value)} placeholder="e.g. Alice" />
-                </div>
-                {importError && <p className="text-xs text-destructive">{importError}</p>}
+              <div className="space-y-1 text-sm">
+                {excerptCountsByTranscript(phase.bundle).length === 0 ? (
+                  <p className="text-muted-foreground">No highlighted excerpts in this codebook.</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Excerpts by transcript</p>
+                    <ul className="space-y-0.5">
+                      {excerptCountsByTranscript(phase.bundle).map((t) => (
+                        <li key={t.file_name}>
+                          {t.file_name}: {t.count} excerpt{t.count === 1 ? "" : "s"}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" size="sm" onClick={onExit}>
                   Cancel
                 </Button>
-                <Button size="sm" disabled={!pendingFile || !importedOwnerName.trim()} onClick={submitImport}>
-                  Start Comparing
+                <Button
+                  size="sm"
+                  onClick={() => setPhase({ kind: "comparing", bundle: phase.bundle, ownerName: phase.ownerName })}
+                >
+                  Continue
                 </Button>
               </DialogFooter>
             </>
@@ -352,7 +343,11 @@ export function CompareView({
             <Button variant="outline" size="sm" onClick={() => bundle && setPhase({ kind: "comparing", bundle, ownerName })}>
               Back
             </Button>
-            <Button size="sm" disabled={!finishVersionLabel.trim()} onClick={() => bundle && submitFinish(bundle)}>
+            <Button
+              size="sm"
+              disabled={!finishVersionLabel.trim()}
+              onClick={() => bundle && submitFinish(bundle)}
+            >
               Finish
             </Button>
           </DialogFooter>
@@ -372,12 +367,31 @@ export function CompareView({
               <DialogHeader>
                 <DialogTitle>Comparison complete</DialogTitle>
                 <DialogDescription>
-                  {phase.codesAccepted} code{phase.codesAccepted === 1 ? "" : "s"} accepted, {phase.excerptsCreated} excerpt
-                  {phase.excerptsCreated === 1 ? "" : "s"} highlighted
-                  {phase.excerptsSkipped > 0 ? ` (${phase.excerptsSkipped} skipped).` : "."} This is now your active
-                  codebook version.
+                  Merged {phase.result.codesAccepted} code{phase.result.codesAccepted === 1 ? "" : "s"} into your codebook.
+                  This is now your active codebook version.
                 </DialogDescription>
               </DialogHeader>
+              <div className="space-y-1 text-sm">
+                {phase.result.excerptsByTranscript.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    No new excerpts highlighted{phase.result.excerptsSkipped > 0 ? ` (${phase.result.excerptsSkipped} skipped).` : "."}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Excerpts highlighted</p>
+                    <ul className="space-y-0.5">
+                      {phase.result.excerptsByTranscript.map((t) => (
+                        <li key={t.file_name}>
+                          {t.file_name}: {t.count} excerpt{t.count === 1 ? "" : "s"}
+                        </li>
+                      ))}
+                    </ul>
+                    {phase.result.excerptsSkipped > 0 && (
+                      <p className="text-xs text-muted-foreground">{phase.result.excerptsSkipped} skipped (not found locally).</p>
+                    )}
+                  </>
+                )}
+              </div>
               <DialogFooter>
                 <Button size="sm" onClick={onExit}>
                   Done

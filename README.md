@@ -12,7 +12,9 @@ A local-only reflexive thematic analysis tool. Everything — transcripts, codes
 3. The first run installs dependencies and builds the app (a minute or two); every run after that starts instantly.
 4. Your browser opens to `http://localhost:4000` automatically. Leave the terminal/command window open while you use the app; closing it stops the server.
 
-If your OS blocks the script the first time (unrecognized publisher / unidentified developer), right-click the file and choose "Open" once to approve it, then use it normally afterward.
+If your OS blocks the script the first time (unrecognized publisher / unidentified developer)
+- MacOS: run `xattr -d com.apple.quarantine path_to_command_file` in your terminal and then open the file again.
+- right-click the file and choose "Open" once to approve it.
 
 ## Developing
 

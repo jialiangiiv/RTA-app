@@ -1,7 +1,6 @@
 import { db } from "../core/db";
 import { newId } from "../core/ids";
 import { ResearchQuestion } from "../models/types";
-import { affinityNodesService } from "./affinityNodesService";
 
 export const researchQuestionsService = {
   listByProject(projectId: string): ResearchQuestion[] {
@@ -42,6 +41,5 @@ export const researchQuestionsService = {
 
   remove(id: string): void {
     db.prepare("DELETE FROM research_questions WHERE id = ?").run(id);
-    affinityNodesService.removeByRef("rq_lane", id);
   },
 };

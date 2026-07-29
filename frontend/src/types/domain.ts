@@ -108,12 +108,15 @@ export interface CodedExcerpt {
   created_at: string;
 }
 
-export type AffinityNodeType = "rq_lane" | "section" | "theme" | "code" | "note" | "unsorted";
+export type AffinityNodeType = "iq_board" | "section" | "theme" | "code" | "note" | "not_yet_coded";
 
-/** One canvas-position row per visual node on the Affinity Map / Axial Coding board. 'rq_lane'
- *  and 'code' wrap an existing ResearchQuestion/QualitativeCode via ref_id (display text comes
- *  from the referenced row); 'section'/'theme'/'note' are freeform and own label/body/font_size;
- *  'unsorted' is a single auto-created top-level bin per project. parent_id expresses nesting. */
+/** One canvas-position row per visual node on the Affinity Map / Axial Coding board. 'iq_board'
+ *  and 'code' wrap an existing InterviewQuestion/QualitativeCode via ref_id (display text comes
+ *  from the referenced row) — a code gets one 'code' node per IQ it's actually coded under, so
+ *  ref_id can repeat; 'section'/'theme'/'note' are freeform and own label/body/font_size, nested
+ *  inside an 'iq_board'; 'not_yet_coded' is a single auto-created top-level bin per project for
+ *  codes with zero coded excerpts anywhere. Research Questions have no node of their own — IQ
+ *  boards are grouped into RQ-labeled columns purely client-side. parent_id expresses nesting. */
 export interface AffinityNode {
   id: string;
   project_id: string;

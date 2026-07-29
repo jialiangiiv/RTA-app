@@ -55,9 +55,12 @@ export function ProjectCreatePage() {
           <CardHeader>
             <Upload className="mb-2 h-6 w-6 text-brand" />
             <CardTitle className="text-lg">Import Existing Project</CardTitle>
-            <CardDescription>Load a previously exported Project (.json) — RQs, IQs, Transcripts, and Codebook included.</CardDescription>
+            <CardDescription>
+              Load a previously exported Project (.json) — brings over its Research Questions and Interview
+              Questions only.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -66,9 +69,21 @@ export function ProjectCreatePage() {
               disabled={importing}
               className="hidden"
             />
-            <Button type="button" variant="outline" disabled={importing} onClick={(e) => e.stopPropagation()}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={importing}
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+            >
               {importing ? "Importing…" : "Choose .json file"}
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Note: Transcripts and the Codebook are not included — the new project starts with none of
+              either, ready for you to add your own.
+            </p>
           </CardContent>
         </Card>
       </div>

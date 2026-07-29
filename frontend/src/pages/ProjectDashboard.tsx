@@ -1,6 +1,6 @@
 import { MouseEvent } from "react";
 import { Link } from "react-router-dom";
-import { ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { ChevronUp, ChevronDown, Plus, BookOpen } from "lucide-react";
 import { useProjects } from "../hooks/useProjects";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { projectsApi } from "../api/projects";
@@ -35,12 +35,20 @@ export function ProjectDashboard() {
             reflexive thematic analysis.
           </p>
         </div>
-        <Button asChild size="lg" className="shrink-0 gap-1.5">
-          <Link to="/projects/new">
-            <Plus className="h-4 w-4" />
-            Create a New Project
-          </Link>
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="outline" size="lg" className="gap-1.5">
+            <Link to="/instructions">
+              <BookOpen className="h-4 w-4" />
+              Instructions
+            </Link>
+          </Button>
+          <Button asChild size="lg" className="gap-1.5">
+            <Link to="/projects/new">
+              <Plus className="h-4 w-4" />
+              Create a New Project
+            </Link>
+          </Button>
+        </div>
       </header>
 
       <section className="animate-fade-in space-y-4 [animation-delay:80ms]">

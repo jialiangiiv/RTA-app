@@ -13,7 +13,7 @@ interface ContainerNodeProps extends NodeProps {
   accentClassName: string;
 }
 
-/** Shared visual shell for every container node type (RQ lane, Section, Theme, Unsorted) — a
+/** Shared visual shell for every container node type (IQ board, Section, Theme, Not Yet Coded) — a
  *  bordered box sized from the AffinityNode's width/height, with a header label and (for
  *  user-created Section/Theme nodes) inline rename + delete. Child nodes render on top via
  *  React Flow's own parentNode positioning, not as DOM children of this component. */
@@ -77,7 +77,7 @@ export function ContainerNode({ id, data, editable, deletable, showTags, accentC
               title="Delete"
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm(`Delete "${displayLabel}"? Its contents become unsorted/top-level.`)) {
+                if (window.confirm(`Delete "${displayLabel}"? Its contents become loose, top-level nodes.`)) {
                   removeNode(affinityNode.id);
                 }
               }}

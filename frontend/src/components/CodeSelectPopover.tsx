@@ -1,5 +1,6 @@
 import { FormEvent, useMemo, useState } from "react";
 import { QualitativeCode } from "../types/domain";
+import { codeLabelClassName } from "../lib/codeLabel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -57,13 +58,16 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
           {paged.map((code) => (
             <li key={code.id}>
               <button
-                className="w-full truncate rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                className="w-full rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-accent"
                 onClick={() => onSelect(code)}
+                title={code.label}
               >
-                <span className="mr-1.5 text-muted-foreground" aria-hidden="true">
-                  •
+                <span className={codeLabelClassName(code.label, "block")}>
+                  <span className="mr-1.5 text-muted-foreground" aria-hidden="true">
+                    •
+                  </span>
+                  {code.label}
                 </span>
-                {code.label}
               </button>
             </li>
           ))}

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useCurrentUser } from "./hooks/useCurrentUser";
 import { CreateUserView } from "./pages/CreateUserView";
 import { ProjectDashboard } from "./pages/ProjectDashboard";
+import { InstructionsPage } from "./pages/InstructionsPage";
 import { ProjectCreatePage } from "./pages/ProjectCreatePage";
 import { ProjectSetupPage } from "./pages/ProjectSetupPage";
 import { ProjectWorkspace } from "./pages/ProjectWorkspace";
@@ -17,6 +18,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/projects" element={<ProjectDashboard />} />
+      <Route path="/instructions" element={<InstructionsPage />} />
       <Route path="/projects/new" element={<ProjectCreatePage />} />
       <Route path="/projects/new/setup" element={<ProjectSetupPage />} />
       <Route path="/projects/:projectId/setup" element={<ProjectSetupPage />} />

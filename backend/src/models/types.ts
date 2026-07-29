@@ -108,7 +108,7 @@ export interface CodedExcerpt {
   created_at: string;
 }
 
-export type AffinityNodeType = "rq_lane" | "section" | "theme" | "code" | "note" | "unsorted";
+export type AffinityNodeType = "iq_board" | "section" | "theme" | "code" | "note" | "not_yet_coded";
 
 /** One canvas-position row per visual node on the Affinity Map board — see schema.sql for the
  *  node_type/ref_id/parent_id discriminated-union rules. */

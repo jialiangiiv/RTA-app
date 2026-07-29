@@ -129,11 +129,15 @@ User:
 AffinityNode (Affinity Map / Axial Coding board):
   - id
   - project_id
-  - node_type ('rq_lane' | 'section' | 'theme' | 'code' | 'note' | 'unsorted')
-  - parent_id? (self-reference — expresses nesting: Code -> Theme -> Section -> RQ lane)
-  - ref_id? (points at a ResearchQuestion.id when node_type='rq_lane', or a QualitativeCode.id
-    when node_type='code' — display text comes from the referenced row, not stored here)
-  - label? (Section/Theme name, or Note title; unused for code/rq_lane/unsorted)
+  - node_type ('iq_board' | 'section' | 'theme' | 'code' | 'note' | 'not_yet_coded')
+  - parent_id? (self-reference — expresses nesting: Code -> Theme -> Section -> IQ board)
+  - ref_id? (points at an InterviewQuestion.id when node_type='iq_board', or a QualitativeCode.id
+    when node_type='code' — display text comes from the referenced row, not stored here. A code
+    gets one node per IQ it's actually coded under, so ref_id can repeat across rows; a code with
+    no coded excerpts anywhere gets exactly one node under the 'not_yet_coded' bin instead.
+    Research Questions have no node of their own — IQ boards are grouped into RQ-labeled columns
+    purely client-side, computed from each IQ's research_question_id.)
+  - label? (Section/Theme name, or Note title; unused for code/iq_board/not_yet_coded)
   - body? (freeform Note text; unused for all other node_types)
   - pos_x, pos_y (canvas position)
   - width?, height?
@@ -176,19 +180,18 @@ Codebooks (Excel, q_code data):
     - do not auto-merge with existing Codebooks
     - old versions remain accessible.
 
-Projects:
-  - export: JSON (or zipped) file including:
-    - Project
+Projects (setup information only — not Transcripts, not Codebooks):
+  - export: JSON file including:
+    - Project (name, description, highlight_color)
     - ResearchQuestions
     - InterviewQuestions
-    - Transcripts
-    - Codebooks
-    - QualitativeCodes
-    - CodedExcerpts
-    - Bookmarks
-    - User
+  - Transcripts and Codebook/QualitativeCode/CodedExcerpt/Bookmark data are deliberately excluded —
+    they have their own dedicated flows (Transcript upload; Codebook Share for comparing/merging
+    q_codes between coders) and would go stale or conflict with a Project-level snapshot.
   - import:
-    - normal mode: load as standalone Project
+    - creates a brand-new Project with a fresh, empty own Codebook and no Transcripts — only
+      RQs/IQs carry over (ids remapped)
+    - normal mode: load as standalone Project, ready for new Transcripts
     - comparison mode: load as read-only “other coder project”.
 </FILE_IMPORT_EXPORT>
 

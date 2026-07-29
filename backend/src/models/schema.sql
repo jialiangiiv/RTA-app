@@ -97,19 +97,24 @@ CREATE TABLE IF NOT EXISTS coded_excerpts (
 );
 
 -- Affinity Map / Axial Coding Board: one canvas-position row per visual node. node_type
--- discriminates: 'rq_lane' and 'code' wrap an existing research_question/qualitative_code
--- (ref_id points at it; label/body unused, display text comes from the referenced row);
--- 'unsorted' is a single auto-created top-level bin per project holding ungrouped codes;
--- 'section'/'theme'/'note' are freeform, user-created containers/content (label/body/font_size
--- used, ref_id NULL). parent_id expresses nesting (Code -> Theme -> Section -> RQ lane); set
--- NULL on parent deletion so children fall back to top-level rather than disappearing.
+-- discriminates: 'iq_board' and 'code' wrap an existing interview_question/qualitative_code
+-- (ref_id points at it; label/body unused, display text comes from the referenced row) — a
+-- q_code gets one 'code' node PER Interview Question it actually has a coded_excerpt under
+-- (see affinityNodesService.autoSeed's reconcile logic), so ref_id can repeat across rows;
+-- 'not_yet_coded' is a single auto-created top-level bin per project holding codes with zero
+-- coded_excerpts anywhere; 'section'/'theme'/'note' are freeform, user-created containers/content
+-- (label/body/font_size used, ref_id NULL), nested inside an 'iq_board'. Research Questions have
+-- no node of their own — the board groups 'iq_board' nodes into RQ-labeled columns purely as a
+-- client-side visual computed from each IQ's research_question_id, nothing persisted for it.
+-- parent_id expresses nesting (Code -> Theme -> Section -> IQ board); set NULL on parent deletion
+-- so children fall back to top-level rather than disappearing.
 CREATE TABLE IF NOT EXISTS affinity_nodes (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  node_type TEXT NOT NULL, -- 'rq_lane' | 'section' | 'theme' | 'code' | 'note' | 'unsorted'
+  node_type TEXT NOT NULL, -- 'iq_board' | 'section' | 'theme' | 'code' | 'note' | 'not_yet_coded'
   parent_id TEXT REFERENCES affinity_nodes(id) ON DELETE SET NULL,
-  ref_id TEXT, -- qualitative_codes.id (node_type='code') or research_questions.id (node_type='rq_lane'); else NULL
-  label TEXT, -- section/theme name, or note title; NULL for code/rq_lane/unsorted
+  ref_id TEXT, -- qualitative_codes.id (node_type='code') or interview_questions.id (node_type='iq_board'); else NULL
+  label TEXT, -- section/theme name, or note title; NULL for code/iq_board/not_yet_coded
   body TEXT, -- freeform note text; NULL for all other node_types
   pos_x REAL NOT NULL DEFAULT 0,
   pos_y REAL NOT NULL DEFAULT 0,
@@ -148,8 +153,12 @@ CREATE INDEX IF NOT EXISTS idx_coded_excerpts_iq ON coded_excerpts(interview_que
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_code ON coded_excerpts(qualitative_code_id);
 CREATE INDEX IF NOT EXISTS idx_affinity_nodes_project ON affinity_nodes(project_id);
 CREATE INDEX IF NOT EXISTS idx_affinity_nodes_parent ON affinity_nodes(parent_id);
+-- 'code' is excluded here — a code can legitimately have several nodes sharing the same ref_id,
+-- one per Interview Question it's coded under (see idx_affinity_nodes_code_ref_parent below).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_affinity_nodes_ref
-  ON affinity_nodes(project_id, node_type, ref_id) WHERE ref_id IS NOT NULL;
+  ON affinity_nodes(project_id, node_type, ref_id) WHERE ref_id IS NOT NULL AND node_type != 'code';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_affinity_nodes_code_ref_parent
+  ON affinity_nodes(project_id, ref_id, parent_id) WHERE node_type = 'code';
 CREATE INDEX IF NOT EXISTS idx_tags_project ON tags(project_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_project_name ON tags(project_id, LOWER(name));
 CREATE INDEX IF NOT EXISTS idx_affinity_node_tags_tag ON affinity_node_tags(tag_id);

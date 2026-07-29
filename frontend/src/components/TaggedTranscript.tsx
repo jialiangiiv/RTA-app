@@ -20,7 +20,17 @@ interface TaggedTranscriptProps {
   renderRightActions?: (tag: TranscriptTag) => ReactNode;
 }
 
-const TAG_HEIGHT = 30;
+const TAG_MIN_HEIGHT = 30;
+const TAG_GAP = 4;
+
+/** Long code names shrink first; unlike the Codes tab/select-popover lists, margin tags wrap
+ *  onto more lines (via break-words, no truncate) rather than losing text to an ellipsis — there's
+ *  no editable form backing this view, so the full name has to stay legible in place. */
+function marginTagTextClass(label: string): string {
+  if (label.length > 28) return "text-[10px]";
+  if (label.length > 16) return "text-[11px]";
+  return "text-xs";
+}
 
 /** Walks text nodes under root to find the {node, offset} a raw_text character offset falls at. */
 function locateOffset(root: Node, charOffset: number): { node: Node; offset: number } {
@@ -44,15 +54,17 @@ function locateOffset(root: Node, charOffset: number): { node: Node; offset: num
   return result ?? { node: root, offset: 0 };
 }
 
-/** Greedily pushes down any tag whose measured top would collide with the one above it. */
-function stackPositions(items: Array<{ key: string; top: number }>): Record<string, number> {
+/** Greedily pushes down any tag whose measured top would collide with the one above it — uses
+ *  each tag's own measured (possibly multi-line, wrapped) height rather than a fixed row height,
+ *  so a long, wrapped label never overlaps the tag below it. */
+function stackPositions(items: Array<{ key: string; top: number; height: number }>): Record<string, number> {
   const sorted = [...items].sort((a, b) => a.top - b.top);
-  let lastTop = -Infinity;
+  let lastBottom = -Infinity;
   const next: Record<string, number> = {};
   for (const item of sorted) {
-    const top = Math.max(item.top, lastTop + TAG_HEIGHT);
+    const top = Math.max(item.top, lastBottom + TAG_GAP);
     next[item.key] = top;
-    lastTop = top;
+    lastBottom = top + item.height;
   }
   return next;
 }
@@ -74,6 +86,8 @@ export function TaggedTranscript({
   renderRightActions,
 }: TaggedTranscriptProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const leftButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const rightButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [leftPositions, setLeftPositions] = useState<Record<string, number>>({});
   const [rightPositions, setRightPositions] = useState<Record<string, number>>({});
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -85,19 +99,21 @@ export function TaggedTranscript({
       const container: HTMLDivElement = containerMaybeNull;
       const containerRect = container.getBoundingClientRect();
 
-      function measure(tags: TranscriptTag[]) {
+      function measure(tags: TranscriptTag[], buttonRefs: Record<string, HTMLButtonElement | null>) {
         return tags.map((tag) => {
           const { node, offset } = locateOffset(container, tag.start_offset);
           const range = document.createRange();
           range.setStart(node, offset);
           range.collapse(true);
           const rect = range.getBoundingClientRect();
-          return { key: tag.key, top: rect.top - containerRect.top + container.scrollTop };
+          const top = rect.top - containerRect.top + container.scrollTop;
+          const height = buttonRefs[tag.key]?.offsetHeight ?? TAG_MIN_HEIGHT;
+          return { key: tag.key, top, height };
         });
       }
 
-      setLeftPositions(stackPositions(measure(leftTags)));
-      setRightPositions(stackPositions(measure(rightTags)));
+      setLeftPositions(stackPositions(measure(leftTags, leftButtonRefs.current)));
+      setRightPositions(stackPositions(measure(rightTags, rightButtonRefs.current)));
     }
 
     recompute();
@@ -110,6 +126,7 @@ export function TaggedTranscript({
   function renderColumn(
     tags: TranscriptTag[],
     positions: Record<string, number>,
+    buttonRefs: Record<string, HTMLButtonElement | null>,
     tagClassName: string,
     renderActions?: (tag: TranscriptTag) => ReactNode
   ) {
@@ -124,10 +141,13 @@ export function TaggedTranscript({
             onMouseLeave={() => setHoveredKey(null)}
           >
             <button
+              ref={(el) => {
+                buttonRefs[tag.key] = el;
+              }}
               type="button"
-              className={`w-full truncate rounded-sm border px-1.5 py-1 text-left text-xs font-medium transition-colors ${tagClassName} ${
-                tag.accepted ? "opacity-60" : ""
-              }`}
+              className={`w-full break-words rounded-sm border px-1.5 py-1 text-left font-medium leading-snug transition-colors ${marginTagTextClass(
+                tag.label
+              )} ${tagClassName} ${tag.accepted ? "opacity-60" : ""}`}
             >
               {tag.accepted ? "✓ " : ""}
               {tag.label}
@@ -147,7 +167,7 @@ export function TaggedTranscript({
 
   return (
     <div className="relative flex gap-4">
-      {renderColumn(leftTags, leftPositions, leftTagClassName, renderLeftActions)}
+      {renderColumn(leftTags, leftPositions, leftButtonRefs.current, leftTagClassName, renderLeftActions)}
 
       <div ref={containerRef} className="min-w-0 flex-1 [white-space:pre-wrap]">
         {hovered ? (
@@ -163,7 +183,7 @@ export function TaggedTranscript({
         )}
       </div>
 
-      {renderColumn(rightTags, rightPositions, rightTagClassName, renderRightActions)}
+      {renderColumn(rightTags, rightPositions, rightButtonRefs.current, rightTagClassName, renderRightActions)}
     </div>
   );
 }

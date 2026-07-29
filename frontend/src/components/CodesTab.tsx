@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { codeLabelClassName } from "../lib/codeLabel";
 
 interface CodesTabProps {
   projectId: string;
@@ -172,7 +173,7 @@ export function CodesTab({
                     className="min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-accent"
                     onClick={() => startEdit(qc)}
                   >
-                    <p className="truncate text-sm font-medium">
+                    <p className={codeLabelClassName(qc.label)} title={qc.label}>
                       <span className="mr-1.5 text-muted-foreground" aria-hidden="true">
                         •
                       </span>

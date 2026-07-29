@@ -15,17 +15,19 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAffinityBoard } from "../hooks/useAffinityBoard";
 import { qualitativeCodesApi } from "../api/codebooks";
 import { researchQuestionsApi } from "../api/researchQuestions";
+import { interviewQuestionsApi } from "../api/interviewQuestions";
 import { projectsApi } from "../api/projects";
 import { tagsApi } from "../api/tags";
-import { AffinityNode, AffinityNodeType, QualitativeCode, ResearchQuestion, Tag } from "../types/domain";
+import { AffinityNode, AffinityNodeType, InterviewQuestion, QualitativeCode, ResearchQuestion, Tag } from "../types/domain";
 import { AffinityBoardContext } from "../components/affinity/boardContext";
 import { FlowNodeData } from "../components/affinity/flowTypes";
-import { RQLaneNode } from "../components/affinity/RQLaneNode";
+import { IQBoardNode } from "../components/affinity/IQBoardNode";
 import { SectionNode } from "../components/affinity/SectionNode";
 import { ThemeNode } from "../components/affinity/ThemeNode";
 import { CodeNode } from "../components/affinity/CodeNode";
 import { NoteNode } from "../components/affinity/NoteNode";
-import { UnsortedNode } from "../components/affinity/UnsortedNode";
+import { NotYetCodedNode } from "../components/affinity/NotYetCodedNode";
+import { RQHeaderNode } from "../components/affinity/RQHeaderNode";
 import { AffinityBoardToolbar } from "../components/affinity/AffinityBoardToolbar";
 import { AffinityTagPopover } from "../components/affinity/AffinityTagPopover";
 import { ManageTagsDialog } from "../components/affinity/ManageTagsDialog";
@@ -34,21 +36,24 @@ import { Button } from "@/components/ui/button";
 /** Defined once outside the component — a fresh object per render would force React Flow to
  *  remount every custom node component (see React Flow's own performance guidance). */
 const NODE_TYPES = {
-  rq_lane: RQLaneNode,
+  iq_board: IQBoardNode,
   section: SectionNode,
   theme: ThemeNode,
   code: CodeNode,
   note: NoteNode,
-  unsorted: UnsortedNode,
+  not_yet_coded: NotYetCodedNode,
+  rq_header: RQHeaderNode,
 };
 
-/** Code (>) Theme (>) Section (>) RQ lane — enforced one level at a time; Notes/RQ lanes/Unsorted
- *  never nest into anything. */
+/** Code (>) Theme (>) Section (>) IQ board — enforced one level at a time; Notes/IQ boards/Not Yet
+ *  Coded never nest into anything. */
 const ALLOWED_PARENTS: Partial<Record<AffinityNodeType, AffinityNodeType[]>> = {
-  code: ["theme", "unsorted"],
+  code: ["theme", "iq_board"],
   theme: ["section"],
-  section: ["rq_lane"],
+  section: ["iq_board"],
 };
+
+const RQ_HEADER_HEIGHT = 32;
 
 function depthOf(node: AffinityNode, byId: Map<string, AffinityNode>): number {
   let depth = 0;
@@ -67,6 +72,7 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
   const board = useAffinityBoard(projectId);
   const [codesById, setCodesById] = useState<Map<string, QualitativeCode>>(new Map());
   const [rqsById, setRqsById] = useState<Map<string, ResearchQuestion>>(new Map());
+  const [iqsById, setIqsById] = useState<Map<string, InterviewQuestion>>(new Map());
   const [projectName, setProjectName] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<FlowNodeData>>([]);
   const [tagPopover, setTagPopover] = useState<{ nodeId: string; top: number; left: number } | null>(null);
@@ -79,6 +85,8 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
       setProjectName(project.name);
       const rqs = await researchQuestionsApi.listByProject(projectId);
       setRqsById(new Map(rqs.map((rq) => [rq.id, rq])));
+      const iqs = await interviewQuestionsApi.listByProject(projectId);
+      setIqsById(new Map(iqs.map((iq) => [iq.id, iq])));
       if (project.active_codebook_id) {
         const codes = await qualitativeCodesApi.listByCodebook(project.active_codebook_id);
         setCodesById(new Map(codes.map((c) => [c.id, c])));
@@ -114,12 +122,12 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
         const code = codesById.get(n.ref_id);
         displayLabel = code?.label ?? "(deleted code)";
         displaySubtitle = code?.description ?? "";
-      } else if (n.node_type === "rq_lane" && n.ref_id) {
-        const rq = rqsById.get(n.ref_id);
-        displayLabel = rq?.label ?? "(deleted RQ)";
-        displaySubtitle = rq?.text ?? "";
-      } else if (n.node_type === "unsorted") {
-        displayLabel = n.label ?? "Unsorted";
+      } else if (n.node_type === "iq_board" && n.ref_id) {
+        const iq = iqsById.get(n.ref_id);
+        displayLabel = iq?.label ?? "(deleted IQ)";
+        displaySubtitle = iq?.text ?? "";
+      } else if (n.node_type === "not_yet_coded") {
+        displayLabel = n.label ?? "Not Yet Coded";
       } else if (n.node_type === "note") {
         displayLabel = "Note";
       }
@@ -130,7 +138,7 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
         position,
         parentId: n.parent_id ?? undefined,
         // No `extent: "parent"` here: these nodes need to be draggable OUT of their current
-        // parent (code -> theme, theme -> section, section -> rq_lane) so onNodeDragStop's
+        // parent (code -> theme, theme -> section, section -> iq_board) so onNodeDragStop's
         // intersection check can re-parent them. React Flow's "parent" extent would clamp the
         // dragged node's position to stay fully inside its *current* parent's box, which makes
         // it physically impossible to ever reach a different container.
@@ -139,9 +147,45 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
         data: { affinityNode: n, displayLabel, displaySubtitle },
       };
     });
-    setNodes(flowNodes);
+    // Plain visual labels above each RQ's column of IQ boards — not persisted, not draggable.
+    // Computed from the just-built flow nodes' CURRENT positions (which reflect any dragging),
+    // so a moved group of IQ boards keeps its header attached above it with no backend round-trip.
+    const rqGroups = new Map<string, { minX: number; minY: number }>();
+    for (const flowNode of flowNodes) {
+      if (flowNode.type !== "iq_board") continue;
+      const affinityNode = flowNode.data.affinityNode;
+      const iq = affinityNode.ref_id ? iqsById.get(affinityNode.ref_id) : undefined;
+      if (!iq) continue;
+      const group = rqGroups.get(iq.research_question_id);
+      if (!group) {
+        rqGroups.set(iq.research_question_id, { minX: flowNode.position.x, minY: flowNode.position.y });
+      } else {
+        group.minX = Math.min(group.minX, flowNode.position.x);
+        group.minY = Math.min(group.minY, flowNode.position.y);
+      }
+    }
+    const headerNodes: Node<FlowNodeData>[] = Array.from(rqGroups, ([rqId, { minX, minY }]) => ({
+      id: `rq-header-${rqId}`,
+      type: "rq_header",
+      position: { x: minX, y: minY - RQ_HEADER_HEIGHT },
+      draggable: false,
+      selectable: false,
+      data: { label: rqsById.get(rqId)?.label ?? "(deleted RQ)" } as unknown as FlowNodeData,
+    }));
+
+    setNodes([...flowNodes, ...headerNodes]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board.nodes, board.loading, codesById, rqsById]);
+  }, [board.nodes, board.loading, codesById, iqsById, rqsById]);
+
+  /** Walks up from `node` (inclusive) to find its 'iq_board' ancestor's id, if any. */
+  function findIqBoardAncestorId(node: AffinityNode): string | undefined {
+    let current: AffinityNode | undefined = node;
+    while (current) {
+      if (current.node_type === "iq_board") return current.id;
+      current = current.parent_id ? affinityNodesById.get(current.parent_id) : undefined;
+    }
+    return undefined;
+  }
 
   const handleNodeDragStop: OnNodeDrag<Node<FlowNodeData>> = async (_event, draggedNode) => {
     const affinityNode = affinityNodesById.get(draggedNode.id);
@@ -155,15 +199,29 @@ function AffinityBoardCanvas({ projectId }: { projectId: string }) {
     let newParent: AffinityNode | undefined;
     if (allowed.length > 0) {
       const intersecting = getIntersectingNodes(draggedNode);
-      const candidates = intersecting
+      let candidates = intersecting
         .map((n) => affinityNodesById.get(n.id))
         .filter((n): n is AffinityNode => !!n && n.id !== affinityNode.id && allowed.includes(n.node_type))
         .sort((a, b) => (a.width ?? Infinity) * (a.height ?? Infinity) - (b.width ?? Infinity) * (b.height ?? Infinity));
+
+      // A 'code' node's IQ is a live fact (which Interview Question it's actually coded under),
+      // not something a drag should silently change — restrict its candidates to containers that
+      // belong to its OWN current IQ board. Theme/Section are user-authored organization, so they
+      // can freely move between IQ boards without this restriction.
+      if (affinityNode.node_type === "code") {
+        const homeIqBoardId = findIqBoardAncestorId(affinityNode);
+        candidates = candidates.filter((c) => findIqBoardAncestorId(c) === homeIqBoardId);
+      }
       newParent = candidates[0];
     }
 
     const updates: Partial<AffinityNode> = { pos_x: absX, pos_y: absY };
-    if ((newParent?.id ?? null) !== affinityNode.parent_id) {
+    // A 'code' node with no valid same-board candidate (e.g. dropped into a different IQ's board,
+    // or empty canvas) keeps its existing parent_id — the cross-IQ reparent is silently rejected,
+    // not converted into an unparenting. Every other node_type still falls back to top-level (null)
+    // when dragged out of any container, which is legitimate user-authored reorganization for them.
+    const staysOnRejectedCodeMove = affinityNode.node_type === "code" && !newParent;
+    if (!staysOnRejectedCodeMove && (newParent?.id ?? null) !== affinityNode.parent_id) {
       updates.parent_id = newParent?.id ?? null;
     }
     await board.updateNode(affinityNode.id, updates);

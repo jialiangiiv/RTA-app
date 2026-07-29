@@ -49,6 +49,19 @@ function migrate() {
       ) WHERE active_codebook_id IS NULL
     `);
   }
+  // One-time cleanup for the Affinity Map's 'rq_lane'/'unsorted' node types, replaced by
+  // 'iq_board'/'not_yet_coded'. Guarded on legacy rows actually existing so this only ever fires
+  // once per DB — otherwise it would wipe 'code' nodes (and every user-dragged position) on EVERY
+  // startup. 'code' nodes are wiped alongside them since they're fully re-derivable from
+  // coded_excerpts — affinityNodesService.autoSeed rebuilds them correctly under the new scheme
+  // on next board load.
+  const hasLegacyAffinityNodes =
+    db.prepare("SELECT 1 FROM affinity_nodes WHERE node_type IN ('rq_lane', 'unsorted') LIMIT 1").get() !== undefined;
+  if (hasLegacyAffinityNodes) {
+    db.exec(`DELETE FROM affinity_nodes WHERE node_type IN ('rq_lane', 'unsorted', 'code')`);
+    logger.info("migrate.affinity_nodes_reset", {});
+  }
+
   logger.info("migrate.applied", { schemaPath });
 }
 

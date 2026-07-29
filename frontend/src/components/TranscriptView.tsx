@@ -52,8 +52,8 @@ export function TranscriptView({
   const [hoveredExcerpt, setHoveredExcerpt] = useState<HoveredExcerpt | null>(null);
   const hoverCloseTimeout = useRef<number | null>(null);
   const segments = useMemo(
-    () => buildSegments(transcript.raw_text, codedExcerpts, bookmarks),
-    [transcript.raw_text, codedExcerpts, bookmarks]
+    () => buildSegments(transcript.raw_text, codedExcerpts, bookmarks, pendingSelection),
+    [transcript.raw_text, codedExcerpts, bookmarks, pendingSelection]
   );
 
   function cancelHoverClose() {
@@ -104,6 +104,10 @@ export function TranscriptView({
       end_offset,
       popoverPosition: { top: rect.bottom + window.scrollY + 6, left: rect.left + window.scrollX },
     });
+    // Clear the native browser selection now that we've captured its offsets — our own
+    // brand-colored `pending` highlight (driven by pendingSelection, see buildSegments) takes
+    // over from here, so the selection doesn't visually compete with or get lost behind the popover.
+    selection.removeAllRanges();
   }
 
   function closePopover() {

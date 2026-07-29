@@ -27,13 +27,19 @@ export interface TranscriptSegment {
   text: string;
   excerpt: CodedExcerpt | null;
   bookmark: Bookmark | null;
+  /** True while the user has this run selected and the "add code" popover is open —
+   *  lets the not-yet-saved selection render a highlight before any CodedExcerpt exists. */
+  pending: boolean;
 }
 
-/** Splits raw_text into runs at every CodedExcerpt/Bookmark boundary, for highlight rendering. */
+/** Splits raw_text into runs at every CodedExcerpt/Bookmark/pending-selection boundary, for
+ *  highlight rendering. pendingRange is the in-progress selection behind an open CodeSelectPopover
+ *  (no CodedExcerpt exists yet, so it isn't covered by the excerpts boundaries above). */
 export function buildSegments(
   rawText: string,
   excerpts: CodedExcerpt[],
-  bookmarks: Bookmark[] = []
+  bookmarks: Bookmark[] = [],
+  pendingRange: { start_offset: number; end_offset: number } | null = null
 ): TranscriptSegment[] {
   const boundaries = new Set<number>([0, rawText.length]);
   excerpts.forEach((e) => {
@@ -41,6 +47,10 @@ export function buildSegments(
     boundaries.add(e.end_offset);
   });
   bookmarks.forEach((b) => boundaries.add(b.position));
+  if (pendingRange) {
+    boundaries.add(pendingRange.start_offset);
+    boundaries.add(pendingRange.end_offset);
+  }
 
   const sorted = Array.from(boundaries).sort((a, b) => a - b);
   const segments: TranscriptSegment[] = [];
@@ -49,7 +59,8 @@ export function buildSegments(
     const end = sorted[i + 1];
     const excerpt = excerpts.find((e) => e.start_offset <= start && e.end_offset >= end) ?? null;
     const bookmark = bookmarks.find((b) => b.position === start) ?? null;
-    segments.push({ start, end, text: rawText.slice(start, end), excerpt, bookmark });
+    const pending = pendingRange ? pendingRange.start_offset <= start && pendingRange.end_offset >= end : false;
+    segments.push({ start, end, text: rawText.slice(start, end), excerpt, bookmark, pending });
   }
   return segments;
 }

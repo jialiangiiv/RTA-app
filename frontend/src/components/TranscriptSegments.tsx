@@ -42,6 +42,15 @@ export function TranscriptSegments({ segments, highlightColor, onHoverExcerpt, o
           );
         }
 
+        if (segment.pending) {
+          return (
+            <span key={segment.start} className="rounded-sm bg-brand/25 py-0.5 shadow-[inset_0_-2px_0_rgba(176,70,29,0.5)]">
+              {marker}
+              {segment.text}
+            </span>
+          );
+        }
+
         return (
           <span key={segment.start}>
             {marker}

@@ -40,9 +40,22 @@ export interface CodebookShareImportResult {
   excerptsSkipped: number;
 }
 
+export interface CodebookExcelImportResult {
+  codesCreated: number;
+  codesUpdated: number;
+  byInterviewQuestion: Array<{ iq_label: string; count: number }>;
+  unmatchedIqCount: number;
+}
+
 export const codebookShareApi = {
   exportUrl: (projectId: string) => `/api/projects/${projectId}/codebook-export`,
   parseFile: async (file: File): Promise<CodebookShareBundle> => JSON.parse(await file.text()),
   import: (projectId: string, bundle: CodebookShareBundle, mode: "merge" | "substitute") =>
     apiClient.post<CodebookShareImportResult>(`/projects/${projectId}/codebook-import`, { bundle, mode }),
+  /** Plain 3-column .xlsx (IQ Text / Code Name / Code Definition) — no CodedExcerpts created. */
+  importExcel: (projectId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.post<CodebookExcelImportResult>(`/projects/${projectId}/codebook-import-excel`, formData);
+  },
 };

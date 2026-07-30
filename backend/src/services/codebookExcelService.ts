@@ -1,9 +1,35 @@
 import ExcelJS from "exceljs";
+import { db } from "../core/db";
 import { codebooksService } from "./codebooksService";
 import { qualitativeCodesService } from "./qualitativeCodesService";
 import { codedExcerptsService } from "./codedExcerptsService";
 import { transcriptsService } from "./transcriptsService";
 import { interviewQuestionsService } from "./interviewQuestionsService";
+
+export interface CodebookExcelImportResult {
+  codesCreated: number;
+  codesUpdated: number;
+  byInterviewQuestion: Array<{ iq_label: string; count: number }>;
+  /** Rows whose "IQ Text" didn't match any Interview Question in this project — the code is still
+   *  imported, just without a known IQ to group it under in the import summary. */
+  unmatchedIqCount: number;
+}
+
+const EXPECTED_HEADERS = ["iq text", "code name", "code definition"];
+
+function normalize(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function cellText(row: ExcelJS.Row, col: number): string {
+  const value = row.getCell(col).value;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object" && "text" in value) return String((value as { text: unknown }).text ?? "");
+  if (typeof value === "object" && "richText" in value) {
+    return ((value as { richText: Array<{ text: string }> }).richText ?? []).map((r) => r.text).join("");
+  }
+  return String(value);
+}
 
 export const codebookExcelService = {
   /**
@@ -11,8 +37,8 @@ export const codebookExcelService = {
    * name, definition), followed by one "Highlight Text N" column per occurrence — however many
    * the code with the most excerpts has. Each highlight cell also names its source Transcript
    * (e.g. "word for word cloned (P1.docx)") so the sheet reads standalone outside the app.
-   * Export-only — re-importing a Codebook only happens via the JSON share flow now (see
-   * codebookShareService), so this never needs to parse a workbook back.
+   * This shape is export-only (highlight columns can't be round-tripped back into offsets) — a
+   * separate, simpler layout is what importFromBuffer below actually parses.
    */
   async exportToBuffer(codebookId: string): Promise<Buffer> {
     const codebook = codebooksService.get(codebookId);
@@ -44,5 +70,88 @@ export const codebookExcelService = {
 
     const arrayBuffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(arrayBuffer);
+  },
+
+  /**
+   * Parses a plain 3-column .xlsx (headers "IQ Text", "Code Name", "Code Definition", any order,
+   * case-insensitive) into the Project's own Codebook — merge-by-label, same upsert semantics as
+   * codebookShareService's JSON import (existing label -> update definition, else create). Each
+   * row's "IQ Text" is matched against this Project's Interview Questions (by text, falling back
+   * to label) purely to group the import summary by IQ; it never creates a CodedExcerpt, since a
+   * spreadsheet row carries no transcript/offset to highlight — that's the JSON share flow's job.
+   */
+  async importFromBuffer(projectId: string, buffer: Buffer): Promise<CodebookExcelImportResult> {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new Error("The workbook has no sheets.");
+
+    const headerRow = sheet.getRow(1);
+    const colByHeader = new Map<string, number>();
+    headerRow.eachCell((cell, colNumber) => {
+      colByHeader.set(normalize(String(cell.value ?? "")), colNumber);
+    });
+    const iqTextCol = colByHeader.get("iq text");
+    const codeNameCol = colByHeader.get("code name");
+    const codeDefinitionCol = colByHeader.get("code definition");
+    const missing = EXPECTED_HEADERS.filter((h) => !colByHeader.has(h));
+    if (missing.length > 0 || !iqTextCol || !codeNameCol || !codeDefinitionCol) {
+      throw new Error(`Missing column(s): ${missing.join(", ") || "IQ Text, Code Name, Code Definition"}.`);
+    }
+
+    return db.transaction((): CodebookExcelImportResult => {
+      const codebook = codebooksService.ensureOwnCodebook(projectId);
+      const existingCodes = qualitativeCodesService.listByCodebook(codebook.id);
+      const byLabel = new Map(existingCodes.map((qc) => [normalize(qc.label), qc]));
+
+      const localIqs = interviewQuestionsService.listByProject(projectId);
+      const iqsByText = new Map(localIqs.map((iq) => [normalize(iq.text), iq]));
+      const iqsByLabel = new Map(localIqs.map((iq) => [normalize(iq.label), iq]));
+
+      let codesCreated = 0;
+      let codesUpdated = 0;
+      let unmatchedIqCount = 0;
+      const countByIqLabel = new Map<string, number>();
+
+      for (let r = 2; r <= sheet.rowCount; r++) {
+        const row = sheet.getRow(r);
+        const codeName = cellText(row, codeNameCol).trim();
+        if (!codeName) continue;
+        const codeDefinition = cellText(row, codeDefinitionCol).trim();
+        const iqText = cellText(row, iqTextCol).trim();
+
+        const key = normalize(codeName);
+        const match = byLabel.get(key);
+        if (match) {
+          qualitativeCodesService.update(match.id, { description: codeDefinition || match.description });
+          codesUpdated++;
+        } else {
+          const created = qualitativeCodesService.create({
+            codebook_id: codebook.id,
+            label: codeName,
+            description: codeDefinition || codeName,
+            theme: null,
+            example_quote: null,
+            color: null,
+          });
+          byLabel.set(key, created);
+          codesCreated++;
+        }
+
+        const iq = iqsByText.get(normalize(iqText)) ?? iqsByLabel.get(normalize(iqText));
+        if (iq) {
+          countByIqLabel.set(iq.label, (countByIqLabel.get(iq.label) ?? 0) + 1);
+        } else {
+          unmatchedIqCount++;
+        }
+      }
+
+      return {
+        codesCreated,
+        codesUpdated,
+        byInterviewQuestion: Array.from(countByIqLabel, ([iq_label, count]) => ({ iq_label, count })),
+        unmatchedIqCount,
+      };
+    })();
   },
 };

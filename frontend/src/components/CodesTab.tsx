@@ -17,7 +17,12 @@ interface CodesTabProps {
   project: Project | null;
   ownCodebook: Codebook | null;
   versions: Codebook[];
+  /** Already scoped to the active Interview Question unless showAllCodes — see ProjectWorkspace. */
   qualitativeCodes: QualitativeCode[];
+  totalCodeCount: number;
+  activeInterviewQuestionLabel: string | null;
+  showAllCodes: boolean;
+  onToggleShowAllCodes: () => void;
   comparisonCodebooks: Codebook[];
   transcripts: TranscriptSummary[];
   codedExcerpts: CodedExcerpt[];
@@ -33,6 +38,10 @@ export function CodesTab({
   ownCodebook,
   versions,
   qualitativeCodes,
+  totalCodeCount,
+  activeInterviewQuestionLabel,
+  showAllCodes,
+  onToggleShowAllCodes,
   comparisonCodebooks,
   transcripts,
   codedExcerpts,
@@ -131,8 +140,25 @@ export function CodesTab({
         </div>
       )}
 
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {showAllCodes
+            ? `Showing all ${totalCodeCount} code${totalCodeCount === 1 ? "" : "s"}`
+            : `Showing ${qualitativeCodes.length} of ${totalCodeCount} code${totalCodeCount === 1 ? "" : "s"}${
+                activeInterviewQuestionLabel ? ` — for ${activeInterviewQuestionLabel}` : ""
+              }`}
+        </p>
+        <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={onToggleShowAllCodes}>
+          {showAllCodes ? "Show this IQ only" : "Show all codes"}
+        </Button>
+      </div>
+
       {qualitativeCodes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No codes yet — add one below, or highlight text to create one inline.</p>
+        <p className="text-sm text-muted-foreground">
+          {showAllCodes
+            ? "No codes yet — add one below, or highlight text to create one inline."
+            : "No codes for this Interview Question yet — highlight text to create one, or switch to \"Show all codes\"."}
+        </p>
       ) : (
         <ul className="divide-y rounded-md border">
           {qualitativeCodes.map((qc) =>

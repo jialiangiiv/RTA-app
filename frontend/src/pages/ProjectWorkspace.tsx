@@ -6,6 +6,7 @@ import { researchQuestionsApi } from "../api/researchQuestions";
 import { qualitativeCodesApi } from "../api/codebooks";
 import { useInterviewQuestions } from "../hooks/useInterviewQuestions";
 import { useCodedExcerpts } from "../hooks/useCodedExcerpts";
+import { useCodeIdsForInterviewQuestion } from "../hooks/useCodeIdsForInterviewQuestion";
 import { useBookmarks } from "../hooks/useBookmarks";
 import { useCodebooks } from "../hooks/useCodebooks";
 import { useQualitativeCodes } from "../hooks/useQualitativeCodes";
@@ -47,12 +48,17 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   const [leftTab, setLeftTab] = useState<LeftTab>("documents");
   const [rightTab, setRightTab] = useState<RightTab>("codes");
   const [rightHidden, setRightHidden] = useState(false);
+  // Default view scopes both the right column's list and the highlight/add-code card to codes
+  // already used under the active IQ — a project can accumulate far more codes overall than are
+  // relevant to any one question, so this keeps both surfaces focused unless explicitly widened.
+  const [showAllCodes, setShowAllCodes] = useState(false);
   const { width: leftWidth, startDrag: startLeftDrag } = useResizableWidth(280, 200, 480, "right");
   const { width: rightWidth, startDrag: startRightDrag } = useResizableWidth(340, 260, 560, "left");
 
   const { interviewQuestions } = useInterviewQuestions(projectId);
   const { transcript: activeTranscript } = useActiveTranscript(activeTranscriptId);
   const { codedExcerpts, refresh: refreshCodedExcerpts } = useCodedExcerpts(activeTranscriptId);
+  const { codeIds: iqCodeIds, refresh: refreshIqCodeIds } = useCodeIdsForInterviewQuestion(activeInterviewQuestionId);
   const { bookmarks, refresh: refreshBookmarks } = useBookmarks(activeTranscriptId, currentUser.id);
   const { codebooks, refresh: refreshCodebooks } = useCodebooks(projectId);
 
@@ -110,6 +116,19 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.classList.add("ring-2", "ring-brand", "ring-offset-2");
     window.setTimeout(() => el.classList.remove("ring-2", "ring-brand", "ring-offset-2"), 1200);
+  }
+
+  // Both the right column's list and the highlight/add-code popover read from this — see
+  // showAllCodes above.
+  const displayedQualitativeCodes = useMemo(
+    () => (showAllCodes ? qualitativeCodes : qualitativeCodes.filter((qc) => iqCodeIds.has(qc.id))),
+    [qualitativeCodes, iqCodeIds, showAllCodes]
+  );
+  const activeInterviewQuestionLabel = interviewQuestions.find((iq) => iq.id === activeInterviewQuestionId)?.label ?? null;
+
+  function refreshExcerpts() {
+    refreshCodedExcerpts();
+    refreshIqCodeIds();
   }
 
   const qualitativeCodesById = useMemo(
@@ -200,20 +219,20 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                 refreshProject();
                 refreshCodebooks();
                 refreshCodes();
-                refreshCodedExcerpts();
+                refreshExcerpts();
               }}
             />
           ) : (
             <TranscriptView
               transcript={activeTranscript}
               codedExcerpts={visibleCodedExcerpts}
-              qualitativeCodes={qualitativeCodes}
+              qualitativeCodes={displayedQualitativeCodes}
               qualitativeCodesById={qualitativeCodesById}
               ownCodebookId={activeCodebook?.id ?? null}
               highlightColor={project?.highlight_color ?? "#b0461d"}
               activeInterviewQuestionId={activeInterviewQuestionId}
               bookmarks={bookmarks}
-              onExcerptsChanged={refreshCodedExcerpts}
+              onExcerptsChanged={refreshExcerpts}
               onCodesChanged={refreshCodes}
               onCursorMove={setCursorPosition}
             />
@@ -249,7 +268,11 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                   project={project}
                   ownCodebook={activeCodebook}
                   versions={versions}
-                  qualitativeCodes={qualitativeCodes}
+                  qualitativeCodes={displayedQualitativeCodes}
+                  totalCodeCount={qualitativeCodes.length}
+                  activeInterviewQuestionLabel={activeInterviewQuestionLabel}
+                  showAllCodes={showAllCodes}
+                  onToggleShowAllCodes={() => setShowAllCodes((v) => !v)}
                   comparisonCodebooks={comparisonCodebooks}
                   transcripts={transcripts}
                   codedExcerpts={visibleCodedExcerpts}
@@ -258,7 +281,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                     refreshCodebooks();
                     refreshProject();
                   }}
-                  onExcerptsChanged={refreshCodedExcerpts}
+                  onExcerptsChanged={refreshExcerpts}
                   onJumpToExcerpt={handleJumpToExcerpt}
                 />
               </TabsContent>

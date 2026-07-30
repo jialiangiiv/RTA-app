@@ -1,6 +1,11 @@
 import { ChangeEvent, useRef, useState } from "react";
 import { Loader2, ChevronDown } from "lucide-react";
-import { codebookShareApi, CodebookShareBundle, CodebookShareImportResult } from "../api/codebookShare";
+import {
+  codebookShareApi,
+  CodebookExcelImportResult,
+  CodebookShareBundle,
+  CodebookShareImportResult,
+} from "../api/codebookShare";
 import { codebooksApi } from "../api/codebooks";
 import { Project, TranscriptSummary } from "../types/domain";
 import { Button } from "@/components/ui/button";
@@ -35,6 +40,10 @@ type Step =
   | { kind: "done"; result: CodebookShareImportResult }
   | { kind: "error"; message: string };
 
+/** Kept fully separate from `Step` above (the .json review/merge flow) so the Excel path can
+ *  never affect its behavior. */
+type ExcelStep = { kind: "importing" } | { kind: "done"; result: CodebookExcelImportResult } | { kind: "error"; message: string };
+
 function normalize(s: string): string {
   return s.trim().toLowerCase();
 }
@@ -55,6 +64,27 @@ export function CodebookShareCard({
   const [step, setStep] = useState<Step | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [excelStep, setExcelStep] = useState<ExcelStep | null>(null);
+  const excelFileRef = useRef<HTMLInputElement>(null);
+
+  async function handlePickExcelFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (excelFileRef.current) excelFileRef.current.value = "";
+    if (!file) return;
+    setExcelStep({ kind: "importing" });
+    try {
+      const result = await codebookShareApi.importExcel(projectId, file);
+      setExcelStep({ kind: "done", result });
+      onImported();
+    } catch (err) {
+      setExcelStep({ kind: "error", message: (err as Error).message });
+    }
+  }
+
+  function closeExcel() {
+    setExcelStep(null);
+  }
 
   async function handlePickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -111,10 +141,33 @@ export function CodebookShareCard({
 
   return (
     <div className="space-y-2">
-      <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
-      <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
-        Import Codebook (.json)
-      </Button>
+      <div className="space-y-1">
+        <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
+        <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
+          Import Codebook (.json)
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Automatically highlights the matching text in your transcripts.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <input ref={excelFileRef} type="file" accept=".xlsx" onChange={handlePickExcelFile} className="hidden" />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={excelStep?.kind === "importing"}
+          onClick={() => excelFileRef.current?.click()}
+        >
+          {excelStep?.kind === "importing" ? "Importing…" : "Import Codebook (Excel)"}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Needs three columns: IQ Text, Code Name, Code Definition — codes are grouped by Interview
+          Question but not highlighted in the text.
+        </p>
+      </div>
 
       <Popover>
         <PopoverTrigger asChild>
@@ -269,6 +322,72 @@ export function CodebookShareCard({
               </DialogHeader>
               <DialogFooter>
                 <Button size="sm" onClick={close}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={excelStep !== null} onOpenChange={(open) => !open && closeExcel()}>
+        <DialogContent>
+          {excelStep?.kind === "importing" && (
+            <div className="flex items-center justify-center gap-3 py-6 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Importing Excel codebook…
+            </div>
+          )}
+
+          {excelStep?.kind === "done" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Excel import complete</DialogTitle>
+                <DialogDescription>
+                  {excelStep.result.codesCreated} code{excelStep.result.codesCreated === 1 ? "" : "s"} added,{" "}
+                  {excelStep.result.codesUpdated} updated. No highlights were created.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1 text-sm">
+                {excelStep.result.byInterviewQuestion.length === 0 ? (
+                  <p className="text-muted-foreground">No rows matched an Interview Question by text.</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Codes by Interview Question
+                    </p>
+                    <ul className="space-y-0.5">
+                      {excelStep.result.byInterviewQuestion.map((r) => (
+                        <li key={r.iq_label}>
+                          {r.iq_label}: {r.count} code{r.count === 1 ? "" : "s"}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {excelStep.result.unmatchedIqCount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {excelStep.result.unmatchedIqCount} row{excelStep.result.unmatchedIqCount === 1 ? "" : "s"} didn't
+                    match any Interview Question by text.
+                  </p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button size="sm" onClick={closeExcel}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {excelStep?.kind === "error" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Excel import failed</DialogTitle>
+                <DialogDescription className="text-destructive">{excelStep.message}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button size="sm" onClick={closeExcel}>
                   Close
                 </Button>
               </DialogFooter>

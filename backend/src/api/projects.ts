@@ -1,10 +1,14 @@
 import { Router } from "express";
+import multer from "multer";
 import { projectsService } from "../services/projectsService";
 import { projectBundleService, ProjectBundle } from "../services/projectBundleService";
 import { codebookShareService, CodebookShareBundle } from "../services/codebookShareService";
 import { codebooksService } from "../services/codebooksService";
+import { codebookExcelService } from "../services/codebookExcelService";
 import { codebookVersionsService, AcceptedCode } from "../services/codebookVersionsService";
 import { logger } from "../core/logger";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 export const projectsRouter = Router();
 
@@ -114,6 +118,25 @@ projectsRouter.post("/:id/codebook-import", (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     logger.error("codebook.shared_import_failed", {});
+    res.status(422).json({ error: (err as Error).message });
+  }
+});
+
+/** Plain 3-column .xlsx import (IQ Text / Code Name / Code Definition) — merges into the Project's
+ *  own Codebook by label, no CodedExcerpts created (see codebookExcelService.importFromBuffer). */
+projectsRouter.post("/:id/codebook-import-excel", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "file is required" });
+  try {
+    const result = await codebookExcelService.importFromBuffer(req.params.id, req.file.buffer);
+    logger.info("codebook.excel_imported", {
+      project_id: req.params.id,
+      codes_created: result.codesCreated,
+      codes_updated: result.codesUpdated,
+      unmatched_iq_count: result.unmatchedIqCount,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    logger.error("codebook.excel_import_failed", {});
     res.status(422).json({ error: (err as Error).message });
   }
 });

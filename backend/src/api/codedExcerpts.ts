@@ -5,7 +5,11 @@ export const codedExcerptsRouter = Router();
 
 codedExcerptsRouter.get("/", (req, res) => {
   const transcriptId = req.query.transcript_id as string | undefined;
-  if (!transcriptId) return res.status(400).json({ error: "transcript_id query param is required" });
+  const interviewQuestionId = req.query.interview_question_id as string | undefined;
+  if (interviewQuestionId) return res.json(codedExcerptsService.listByInterviewQuestion(interviewQuestionId));
+  if (!transcriptId) {
+    return res.status(400).json({ error: "transcript_id or interview_question_id query param is required" });
+  }
   res.json(codedExcerptsService.listByTranscript(transcriptId));
 });
 

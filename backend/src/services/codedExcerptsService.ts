@@ -15,6 +15,14 @@ export const codedExcerptsService = {
       .all(qualitativeCodeId) as CodedExcerpt[];
   },
 
+  /** Every CodedExcerpt across the whole Project (any Transcript) coded against this Interview
+   *  Question — powers the workspace's "codes for this IQ" default filter. */
+  listByInterviewQuestion(interviewQuestionId: string): CodedExcerpt[] {
+    return db
+      .prepare("SELECT * FROM coded_excerpts WHERE interview_question_id = ?")
+      .all(interviewQuestionId) as CodedExcerpt[];
+  },
+
   create(input: {
     transcript_id: string;
     qualitative_code_id: string;

@@ -16,7 +16,7 @@ If your OS blocks the script the first time (unrecognized publisher / unidentifi
 - MacOS: run `xattr -d com.apple.quarantine path_to_command_file` in your terminal and then open the file again.
 - right-click the file and choose "Open" once to approve it.
 
-**Back up `/backend/rta-app.sqlite` when reinstalling the app.**
+**Back up `/backend/data` when reinstalling the app.**
 
 ## Developing
 

@@ -9,13 +9,15 @@ export interface TranscriptTag {
   accepted?: boolean;
 }
 
+type TagClassName = string | ((tag: TranscriptTag) => string);
+
 interface TaggedTranscriptProps {
   rawText: string;
   leftTags: TranscriptTag[];
   rightTags: TranscriptTag[];
   highlightColor: string;
-  leftTagClassName: string;
-  rightTagClassName: string;
+  leftTagClassName: TagClassName;
+  rightTagClassName: TagClassName;
   renderLeftActions?: (tag: TranscriptTag) => ReactNode;
   renderRightActions?: (tag: TranscriptTag) => ReactNode;
 }
@@ -127,7 +129,7 @@ export function TaggedTranscript({
     tags: TranscriptTag[],
     positions: Record<string, number>,
     buttonRefs: Record<string, HTMLButtonElement | null>,
-    tagClassName: string,
+    tagClassName: TagClassName,
     renderActions?: (tag: TranscriptTag) => ReactNode
   ) {
     return (
@@ -147,7 +149,7 @@ export function TaggedTranscript({
               type="button"
               className={`w-full break-words rounded-sm border px-1.5 py-1 text-left font-medium leading-snug transition-colors ${marginTagTextClass(
                 tag.label
-              )} ${tagClassName} ${tag.accepted ? "opacity-60" : ""}`}
+              )} ${typeof tagClassName === "function" ? tagClassName(tag) : tagClassName}`}
             >
               {tag.accepted ? "✓ " : ""}
               {tag.label}

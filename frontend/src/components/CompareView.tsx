@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { codebookVersionsApi, AcceptedCode, FinishResult } from "../api/codebookVersions";
 import { codebookShareApi, CodebookShareBundle } from "../api/codebookShare";
 import { qualitativeCodesApi } from "../api/codebooks";
+import { codedExcerptsApi } from "../api/codedExcerpts";
 import { CodedExcerpt, QualitativeCode, Transcript } from "../types/domain";
 import { TaggedTranscript, TranscriptTag } from "./TaggedTranscript";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ interface CompareViewProps {
   highlightColor: string;
   onExit: () => void;
   onFinished: () => void;
+  onExcerptDeleted: () => void;
 }
 
 type EditTarget = { side: "left" | "right"; key: string; label: string; definition: string };
@@ -46,6 +48,7 @@ export function CompareView({
   highlightColor,
   onExit,
   onFinished,
+  onExcerptDeleted,
 }: CompareViewProps) {
   const [phase, setPhase] = useState<Phase>({ kind: "import-prompt" });
   const [importedOwnerName, setImportedOwnerName] = useState("");
@@ -82,6 +85,15 @@ export function CompareView({
       counts.set(excerpt.transcript_file_name, (counts.get(excerpt.transcript_file_name) ?? 0) + 1);
     }
     return Array.from(counts, ([file_name, count]) => ({ file_name, count }));
+  }
+
+  async function deleteLeftExcerpt(excerptId: string) {
+    try {
+      await codedExcerptsApi.remove(excerptId);
+      onExcerptDeleted();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
   }
 
   function toggleAccept(codeName: string) {
@@ -190,13 +202,25 @@ export function CompareView({
       });
   }, [bundle, activeTranscript.file_name, editedByCodeName, acceptedCodeNames]);
 
+  // Once a right-side (imported) tag is accepted, it moves out of the "Imported codes" column and
+  // into "Your codes" alongside your own excerpts — shown in a third color so it's still visible
+  // which ones came from the import. `key` for these keeps its "right-" prefix (see rightTags
+  // above), which is how renderLeftActions/leftTagClassName below tell them apart from real
+  // CodedExcerpts (which use the excerpt's own id and support Edit/Delete instead).
+  const acceptedImportTags = rightTags.filter((t) => t.accepted);
+  const unacceptedRightTags = rightTags.filter((t) => !t.accepted);
+  const combinedLeftTags = [...leftTags, ...acceptedImportTags];
+
   return (
     <div className="space-y-4">
       {comparing && (
         <div className="flex items-center justify-between rounded-md border bg-card p-3">
           <div>
             <p className="text-sm font-medium">Comparing with {ownerName}</p>
-            <p className="text-xs text-muted-foreground">Left: your codes. Right: hover a tag to preview, then accept the ones you want.</p>
+            <p className="text-xs text-muted-foreground">
+              Left: your codes. Right: hover a tag to preview, then accept the ones you want — accepted tags move to
+              the left in green.
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onExit}>
@@ -217,20 +241,35 @@ export function CompareView({
           </div>
           <TaggedTranscript
             rawText={activeTranscript.raw_text}
-            leftTags={leftTags}
-            rightTags={rightTags}
-            leftTagClassName="border-border bg-muted hover:bg-accent"
+            leftTags={combinedLeftTags}
+            rightTags={unacceptedRightTags}
+            leftTagClassName={(tag) =>
+              tag.key.startsWith("right-")
+                ? "border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20"
+                : "border-border bg-muted hover:bg-accent"
+            }
             rightTagClassName="border-brand/40 bg-brand/10 hover:bg-brand/20"
             highlightColor={highlightColor}
-            renderLeftActions={(tag) => (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditTarget({ side: "left", key: tag.key, label: tag.label, definition: tag.definition })}
-              >
-                Edit
-              </Button>
-            )}
+            renderLeftActions={(tag) =>
+              tag.key.startsWith("right-") ? (
+                <Button size="sm" variant="outline" onClick={() => toggleAccept(tag.label)}>
+                  Reject
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditTarget({ side: "left", key: tag.key, label: tag.label, definition: tag.definition })}
+                  >
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteLeftExcerpt(tag.key)}>
+                    Delete
+                  </Button>
+                </>
+              )
+            }
             renderRightActions={(tag) => (
               <>
                 <Button
@@ -240,8 +279,8 @@ export function CompareView({
                 >
                   Edit
                 </Button>
-                <Button size="sm" variant={tag.accepted ? "secondary" : "default"} onClick={() => toggleAccept(tag.label)}>
-                  {tag.accepted ? "Accepted ✓" : "Accept"}
+                <Button size="sm" onClick={() => toggleAccept(tag.label)}>
+                  Accept
                 </Button>
               </>
             )}

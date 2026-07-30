@@ -23,6 +23,7 @@ import { Project, QualitativeCode, TranscriptSummary, User } from "../types/doma
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
+const LEFT_COLLAPSED_WIDTH = 36;
 const RIGHT_COLLAPSED_WIDTH = 36;
 
 interface ProjectWorkspaceProps {
@@ -47,6 +48,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   const [centerMode, setCenterMode] = useState<CenterMode>("coding");
   const [leftTab, setLeftTab] = useState<LeftTab>("documents");
   const [rightTab, setRightTab] = useState<RightTab>("codes");
+  const [leftHidden, setLeftHidden] = useState(false);
   const [rightHidden, setRightHidden] = useState(false);
   // Default view scopes both the right column's list and the highlight/add-code card to codes
   // already used under the active IQ — a project can accumulate far more codes overall than are
@@ -171,39 +173,52 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
       <div
         className="grid flex-1 overflow-hidden"
         style={{
-          gridTemplateColumns: `${leftWidth}px auto 1fr auto ${rightHidden ? RIGHT_COLLAPSED_WIDTH : rightWidth}px`,
+          gridTemplateColumns: `${leftHidden ? LEFT_COLLAPSED_WIDTH : leftWidth}px auto 1fr auto ${rightHidden ? RIGHT_COLLAPSED_WIDTH : rightWidth}px`,
         }}
       >
-        <aside className="overflow-y-auto border-r bg-card/40 p-4">
-          <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as LeftTab)}>
-            <TabsList className="w-full">
-              <TabsTrigger value="documents" className="flex-1">
-                Documents
-              </TabsTrigger>
-              <TabsTrigger value="iq" className="flex-1">
-                Interview Question
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="documents">
-              <TranscriptList
-                projectId={projectId}
-                activeTranscriptId={activeTranscriptId}
-                onActiveTranscriptChange={setActiveTranscriptId}
-                onTranscriptsLoaded={setTranscripts}
-              />
-            </TabsContent>
-            <TabsContent value="iq">
-              <IQTab
-                projectId={projectId}
-                interviewQuestions={interviewQuestions}
-                activeInterviewQuestionId={activeInterviewQuestionId}
-                onActiveInterviewQuestionChange={selectInterviewQuestion}
-              />
-            </TabsContent>
-          </Tabs>
-        </aside>
+        {leftHidden ? (
+          <div className="flex items-start justify-center border-r bg-card/40 p-1.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Show Documents panel" onClick={() => setLeftHidden(false)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <aside className="overflow-y-auto border-r bg-card/40 p-4">
+            <div className="mb-2 flex justify-end">
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Hide Documents panel" onClick={() => setLeftHidden(true)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </div>
+            <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as LeftTab)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="documents" className="flex-1">
+                  Documents
+                </TabsTrigger>
+                <TabsTrigger value="iq" className="flex-1">
+                  Interview Question
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="documents">
+                <TranscriptList
+                  projectId={projectId}
+                  activeTranscriptId={activeTranscriptId}
+                  onActiveTranscriptChange={setActiveTranscriptId}
+                  onTranscriptsLoaded={setTranscripts}
+                />
+              </TabsContent>
+              <TabsContent value="iq">
+                <IQTab
+                  projectId={projectId}
+                  interviewQuestions={interviewQuestions}
+                  activeInterviewQuestionId={activeInterviewQuestionId}
+                  onActiveInterviewQuestionChange={selectInterviewQuestion}
+                />
+              </TabsContent>
+            </Tabs>
+          </aside>
+        )}
 
-        <ResizeHandle onMouseDown={startLeftDrag} />
+        {leftHidden ? <div /> : <ResizeHandle onMouseDown={startLeftDrag} />}
 
         <main className="overflow-y-auto p-8">
           {!activeTranscript ? (
@@ -223,6 +238,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                 refreshCodes();
                 refreshExcerpts();
               }}
+              onExcerptDeleted={refreshExcerpts}
             />
           ) : (
             <TranscriptView

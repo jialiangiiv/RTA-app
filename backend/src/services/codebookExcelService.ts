@@ -1,24 +1,62 @@
 import ExcelJS from "exceljs";
+import { Readable } from "node:stream";
 import { db } from "../core/db";
 import { codebooksService } from "./codebooksService";
 import { qualitativeCodesService } from "./qualitativeCodesService";
 import { codedExcerptsService } from "./codedExcerptsService";
 import { transcriptsService } from "./transcriptsService";
 import { interviewQuestionsService } from "./interviewQuestionsService";
+import { InterviewQuestion, Transcript } from "../models/types";
 
 export interface CodebookExcelImportResult {
   codesCreated: number;
-  codesUpdated: number;
-  byInterviewQuestion: Array<{ iq_label: string; count: number }>;
-  /** Rows whose "IQ Text" didn't match any Interview Question in this project — the code is still
-   *  imported, just without a known IQ to group it under in the import summary. */
-  unmatchedIqCount: number;
+  codesReused: number;
+  codesFailed: number;
+  excerptsCreated: number;
+  /** Rows whose (iq_label, iq_text) didn't match any Interview Question in this project — code
+   *  and highlight are both skipped entirely for these, since a CodedExcerpt always needs an IQ. */
+  unmappedIq: Array<{ document_name: string; iq_label: string; iq_text: string; code_name: string }>;
+  /** Rows whose IQ matched but the highlight couldn't be created — the code is still imported. */
+  notFound: Array<{ document_name: string; code_name: string; highlight_text: string; reason: string }>;
+  failedCodes: Array<{ code_name: string; iq_label: string; reason: string }>;
 }
 
-const EXPECTED_HEADERS = ["iq text", "code name", "code definition"];
+const EXPECTED_HEADERS = ["document_name", "iq_label", "iq_text", "code_name", "code_definition", "highlight_text"];
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
+}
+
+/** Collapses all whitespace runs (including line breaks) to a single space and trims — used to
+ *  compare IQ label/text loosely, independent of how a spreadsheet cell happens to wrap them. */
+export function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Builds a regex that matches `needle` inside a larger string while tolerating any difference in
+ *  whitespace/line-break runs — each whitespace run in `needle` becomes `\s+` in the pattern, so a
+ *  highlight copied out of a spreadsheet cell (which may have normalized its own newlines) still
+ *  lines up with the original transcript text. Matches are found directly against the ORIGINAL,
+ *  unnormalized haystack, so returned offsets are valid indices into it. */
+export function findAllOccurrences(haystack: string, needle: string): Array<{ start: number; end: number }> {
+  const trimmedNeedle = needle.trim();
+  if (!trimmedNeedle) return [];
+  const pattern = trimmedNeedle
+    .split(/\s+/)
+    .map((token) => escapeRegExp(token))
+    .join("\\s+");
+  const regex = new RegExp(pattern, "g");
+  const matches: Array<{ start: number; end: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(haystack)) !== null) {
+    matches.push({ start: match.index, end: match.index + match[0].length });
+    if (match[0].length === 0) regex.lastIndex++;
+  }
+  return matches;
 }
 
 function cellText(row: ExcelJS.Row, col: number): string {
@@ -73,85 +111,176 @@ export const codebookExcelService = {
   },
 
   /**
-   * Parses a plain 3-column .xlsx (headers "IQ Text", "Code Name", "Code Definition", any order,
-   * case-insensitive) into the Project's own Codebook — merge-by-label, same upsert semantics as
-   * codebookShareService's JSON import (existing label -> update definition, else create). Each
-   * row's "IQ Text" is matched against this Project's Interview Questions (by text, falling back
-   * to label) purely to group the import summary by IQ; it never creates a CodedExcerpt, since a
-   * spreadsheet row carries no transcript/offset to highlight — that's the JSON share flow's job.
+   * Parses a 6-column .xlsx (headers "document_name", "iq_label", "iq_text", "code_name",
+   * "code_definition", "highlight_text", any order, case-insensitive) into the Project's own
+   * Codebook, creating real CodedExcerpts — unlike the old 3-column format, this one fully
+   * round-trips a codebook onto this project's own transcripts. Per row:
+   *  1. Match (iq_label, iq_text) against this Project's Interview Questions — no match means the
+   *     whole row is skipped (into `unmappedIq`), since a CodedExcerpt always needs an IQ.
+   *  2. Upsert a code scoped to that IQ (same code_name reused if it already exists under that
+   *     exact IQ; a different IQ gets its own code entity even with the same name).
+   *  3. Locate `document_name` among this project's transcripts (by file_name) and `highlight_text`
+   *     within it (whitespace/line-break tolerant, first occurrence wins) to create the excerpt —
+   *     failures here land in `notFound` but don't undo the code creation/reuse above.
+   *
+   * Accepts both .xlsx and .csv — `fileName`'s extension picks which ExcelJS reader parses `buffer`
+   * (defaults to .xlsx if the name is missing/ambiguous, matching this endpoint's original format).
    */
-  async importFromBuffer(projectId: string, buffer: Buffer): Promise<CodebookExcelImportResult> {
+  async importFromBuffer(projectId: string, buffer: Buffer, fileName?: string): Promise<CodebookExcelImportResult> {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
-    const sheet = workbook.worksheets[0];
+    const isCsv = (fileName ?? "").toLowerCase().endsWith(".csv");
+    const sheet = isCsv
+      ? await workbook.csv.read(Readable.from(buffer))
+      : await (async () => {
+          await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+          return workbook.worksheets[0];
+        })();
     if (!sheet) throw new Error("The workbook has no sheets.");
 
     const headerRow = sheet.getRow(1);
     const colByHeader = new Map<string, number>();
     headerRow.eachCell((cell, colNumber) => {
-      colByHeader.set(normalize(String(cell.value ?? "")), colNumber);
+      colByHeader.set(normalize(String(cell.value ?? "")).replace(/\s+/g, "_"), colNumber);
     });
-    const iqTextCol = colByHeader.get("iq text");
-    const codeNameCol = colByHeader.get("code name");
-    const codeDefinitionCol = colByHeader.get("code definition");
-    const missing = EXPECTED_HEADERS.filter((h) => !colByHeader.has(h));
-    if (missing.length > 0 || !iqTextCol || !codeNameCol || !codeDefinitionCol) {
-      throw new Error(`Missing column(s): ${missing.join(", ") || "IQ Text, Code Name, Code Definition"}.`);
+    const cols = {
+      document_name: colByHeader.get("document_name"),
+      iq_label: colByHeader.get("iq_label"),
+      iq_text: colByHeader.get("iq_text"),
+      code_name: colByHeader.get("code_name"),
+      code_definition: colByHeader.get("code_definition"),
+      highlight_text: colByHeader.get("highlight_text"),
+    };
+    const missing = EXPECTED_HEADERS.filter((h) => !cols[h as keyof typeof cols]);
+    if (missing.length > 0) {
+      throw new Error(`Missing column(s): ${missing.join(", ")}.`);
     }
 
     return db.transaction((): CodebookExcelImportResult => {
       const codebook = codebooksService.ensureOwnCodebook(projectId);
       const existingCodes = qualitativeCodesService.listByCodebook(codebook.id);
-      const byLabel = new Map(existingCodes.map((qc) => [normalize(qc.label), qc]));
+      const codesByIqAndLabel = new Map(
+        existingCodes.map((qc) => [`${qc.interview_question_id ?? "∅"}|${normalize(qc.label)}`, qc])
+      );
 
       const localIqs = interviewQuestionsService.listByProject(projectId);
-      const iqsByText = new Map(localIqs.map((iq) => [normalize(iq.text), iq]));
-      const iqsByLabel = new Map(localIqs.map((iq) => [normalize(iq.label), iq]));
+      const iqsByLabelAndText = new Map(
+        localIqs.map((iq) => [`${normalize(normalizeWhitespace(iq.label))}|${normalize(normalizeWhitespace(iq.text))}`, iq])
+      );
+
+      const localTranscripts = transcriptsService.listByProject(projectId);
+      const transcriptsByFileName = new Map(localTranscripts.map((t) => [t.file_name.trim(), t]));
+
+      const existingExcerptKeysByTranscript = new Map<string, Set<string>>();
+      function existingExcerptKeys(transcriptId: string): Set<string> {
+        if (!existingExcerptKeysByTranscript.has(transcriptId)) {
+          existingExcerptKeysByTranscript.set(
+            transcriptId,
+            new Set(
+              codedExcerptsService
+                .listByTranscript(transcriptId)
+                .map((e) => `${e.qualitative_code_id}|${e.start_offset}|${e.end_offset}`)
+            )
+          );
+        }
+        return existingExcerptKeysByTranscript.get(transcriptId)!;
+      }
 
       let codesCreated = 0;
-      let codesUpdated = 0;
-      let unmatchedIqCount = 0;
-      const countByIqLabel = new Map<string, number>();
+      let codesReused = 0;
+      let codesFailed = 0;
+      let excerptsCreated = 0;
+      const unmappedIq: CodebookExcelImportResult["unmappedIq"] = [];
+      const notFound: CodebookExcelImportResult["notFound"] = [];
+      const failedCodes: CodebookExcelImportResult["failedCodes"] = [];
 
       for (let r = 2; r <= sheet.rowCount; r++) {
         const row = sheet.getRow(r);
-        const codeName = cellText(row, codeNameCol).trim();
-        if (!codeName) continue;
-        const codeDefinition = cellText(row, codeDefinitionCol).trim();
-        const iqText = cellText(row, iqTextCol).trim();
+        const documentName = cellText(row, cols.document_name!).trim();
+        const iqLabel = cellText(row, cols.iq_label!).trim();
+        const iqText = cellText(row, cols.iq_text!).trim();
+        const codeName = cellText(row, cols.code_name!).trim();
+        const codeDefinition = cellText(row, cols.code_definition!).trim();
+        const highlightText = cellText(row, cols.highlight_text!).trim();
+        if (!documentName && !iqLabel && !iqText && !codeName && !highlightText) continue; // fully blank row
 
-        const key = normalize(codeName);
-        const match = byLabel.get(key);
-        if (match) {
-          qualitativeCodesService.update(match.id, { description: codeDefinition || match.description });
-          codesUpdated++;
-        } else {
-          const created = qualitativeCodesService.create({
-            codebook_id: codebook.id,
-            label: codeName,
-            description: codeDefinition || codeName,
-            theme: null,
-            example_quote: null,
-            color: null,
+        const iq: InterviewQuestion | undefined = iqsByLabelAndText.get(
+          `${normalize(normalizeWhitespace(iqLabel))}|${normalize(normalizeWhitespace(iqText))}`
+        );
+        if (!iq) {
+          unmappedIq.push({ document_name: documentName, iq_label: iqLabel, iq_text: iqText, code_name: codeName });
+          continue;
+        }
+
+        let codeId: string;
+        const codeKey = `${iq.id}|${normalize(codeName)}`;
+        const existingCode = codesByIqAndLabel.get(codeKey);
+        try {
+          if (existingCode) {
+            const updated = qualitativeCodesService.update(existingCode.id, {
+              description: codeDefinition || existingCode.description,
+            });
+            codeId = updated!.id;
+            codesReused++;
+          } else {
+            const created = qualitativeCodesService.create({
+              codebook_id: codebook.id,
+              interview_question_id: iq.id,
+              label: codeName,
+              description: codeDefinition || codeName,
+              theme: null,
+              example_quote: null,
+              color: null,
+            });
+            codesByIqAndLabel.set(codeKey, created);
+            codeId = created.id;
+            codesCreated++;
+          }
+        } catch (err) {
+          codesFailed++;
+          failedCodes.push({ code_name: codeName, iq_label: iqLabel, reason: (err as Error).message });
+          continue;
+        }
+
+        const transcript: Transcript | undefined = transcriptsByFileName.get(documentName);
+        if (!transcript) {
+          notFound.push({
+            document_name: documentName,
+            code_name: codeName,
+            highlight_text: highlightText,
+            reason: `No transcript found named "${documentName}".`,
           });
-          byLabel.set(key, created);
-          codesCreated++;
+          continue;
         }
 
-        const iq = iqsByText.get(normalize(iqText)) ?? iqsByLabel.get(normalize(iqText));
-        if (iq) {
-          countByIqLabel.set(iq.label, (countByIqLabel.get(iq.label) ?? 0) + 1);
-        } else {
-          unmatchedIqCount++;
+        const occurrences = findAllOccurrences(transcript.raw_text, highlightText);
+        if (occurrences.length === 0) {
+          notFound.push({
+            document_name: documentName,
+            code_name: codeName,
+            highlight_text: highlightText,
+            reason: "Highlight text not found in transcript.",
+          });
+          continue;
         }
+
+        const { start, end } = occurrences[0];
+        const keys = existingExcerptKeys(transcript.id);
+        const dedupeKey = `${codeId}|${start}|${end}`;
+        if (keys.has(dedupeKey)) continue; // already imported (e.g. re-running the same file)
+
+        codedExcerptsService.create({
+          transcript_id: transcript.id,
+          qualitative_code_id: codeId,
+          interview_question_id: iq.id,
+          start_offset: start,
+          end_offset: end,
+          memo: null,
+        });
+        keys.add(dedupeKey);
+        excerptsCreated++;
       }
 
-      return {
-        codesCreated,
-        codesUpdated,
-        byInterviewQuestion: Array.from(countByIqLabel, ([iq_label, count]) => ({ iq_label, count })),
-        unmatchedIqCount,
-      };
+      return { codesCreated, codesReused, codesFailed, excerptsCreated, unmappedIq, notFound, failedCodes };
     })();
   },
 };

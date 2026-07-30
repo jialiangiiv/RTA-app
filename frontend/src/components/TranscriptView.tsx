@@ -134,6 +134,7 @@ export function TranscriptView({
     try {
       const created = await qualitativeCodesApi.create({
         codebook_id: ownCodebookId,
+        interview_question_id: null,
         label,
         description: description || label,
         theme: null,

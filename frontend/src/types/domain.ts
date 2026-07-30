@@ -89,6 +89,8 @@ export interface Codebook {
 export interface QualitativeCode {
   id: string;
   codebook_id: string;
+  /** Interview Question this code was created under, if any — NULL for manually created codes. */
+  interview_question_id: string | null;
   label: string;
   description: string;
   theme: string | null;

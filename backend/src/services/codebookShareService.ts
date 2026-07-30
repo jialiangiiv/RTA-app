@@ -150,35 +150,59 @@ export const codebookShareService = {
         existingCodes = [];
       }
 
-      const byLabel = new Map(existingCodes.map((qc) => [qc.label.trim().toLowerCase(), qc]));
-      const codeNameToId = new Map<string, string>();
+      // Resolve each bundle code's local Interview Question FIRST — matching (and reuse) is scoped
+      // per-IQ, since the same code_name can legitimately exist under two different IQs.
+      const localIqs = interviewQuestionsService.listByProject(projectId);
+      const localIqsByLabel = new Map(localIqs.map((iq) => [iq.label.trim().toLowerCase(), iq]));
+      const localIqsByText = new Map(localIqs.map((iq) => [iq.text.trim().toLowerCase(), iq]));
+      function resolveIq(iqLabel: string, iqText: string): InterviewQuestion | undefined {
+        return localIqsByLabel.get(iqLabel.trim().toLowerCase()) ?? localIqsByText.get(iqText.trim().toLowerCase());
+      }
+      function codeKey(iqId: string | null, label: string): string {
+        return `${iqId ?? "∅"}|${label.trim().toLowerCase()}`;
+      }
+
+      const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.interview_question_id, qc.label), qc]));
+      // `bundle.coded_excerpts` entries only carry a plain code_name (no IQ) — these fallback maps
+      // resolve them to whichever code/IQ was seen FIRST for that name, same as this flow's old
+      // (pre-per-IQ) behavior. Only ambiguous if the bundle genuinely has two same-named codes
+      // under different IQs, which the wire format has no way to disambiguate per-excerpt anyway.
+      const codeIdByPlainName = new Map<string, string>();
+      const iqByPlainName = new Map<string, InterviewQuestion>();
       let codesCreated = 0;
       let codesUpdated = 0;
 
       try {
-        const seenNames = new Set<string>();
+        const seenKeys = new Set<string>();
         for (const code of bundle.codes) {
-          const key = code.code_name.trim().toLowerCase();
-          if (seenNames.has(key)) continue;
-          seenNames.add(key);
+          const plainName = code.code_name.trim().toLowerCase();
+          const iq = resolveIq(code.iq_label, code.iq_text);
+          if (iq && !iqByPlainName.has(plainName)) iqByPlainName.set(plainName, iq);
 
-          const match = byLabel.get(key);
+          const key = codeKey(iq?.id ?? null, code.code_name);
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+
+          const match = byKey.get(key);
+          let codeId: string;
           if (match) {
             qualitativeCodesService.update(match.id, { description: code.code_definition || match.description });
-            codeNameToId.set(key, match.id);
+            codeId = match.id;
             codesUpdated++;
           } else {
             const created = qualitativeCodesService.create({
               codebook_id: codebook.id,
+              interview_question_id: iq?.id ?? null,
               label: code.code_name,
               description: code.code_definition || code.code_name,
               theme: null,
               example_quote: null,
               color: null,
             });
-            codeNameToId.set(key, created.id);
+            codeId = created.id;
             codesCreated++;
           }
+          if (!codeIdByPlainName.has(plainName)) codeIdByPlainName.set(plainName, codeId);
         }
       } catch (err) {
         throw new Error(`Failed while incorporating codes: ${(err as Error).message}`);
@@ -188,18 +212,6 @@ export const codebookShareService = {
       let excerptsSkipped = 0;
 
       try {
-        const localIqs = interviewQuestionsService.listByProject(projectId);
-        const localIqsByLabel = new Map(localIqs.map((iq) => [iq.label.trim().toLowerCase(), iq]));
-        const localIqsByText = new Map(localIqs.map((iq) => [iq.text.trim().toLowerCase(), iq]));
-        const codeNameToIq = new Map<string, InterviewQuestion>();
-        for (const code of bundle.codes) {
-          const key = code.code_name.trim().toLowerCase();
-          const iq =
-            localIqsByLabel.get(code.iq_label.trim().toLowerCase()) ??
-            localIqsByText.get(code.iq_text.trim().toLowerCase());
-          if (iq) codeNameToIq.set(key, iq);
-        }
-
         const localTranscriptsByFileName = new Map(
           transcriptsService.listByProject(projectId).map((t) => [t.file_name, t])
         );
@@ -221,9 +233,9 @@ export const codebookShareService = {
 
         for (const entry of bundle.coded_excerpts) {
           const key = entry.code_name.trim().toLowerCase();
-          const localCodeId = codeNameToId.get(key);
+          const localCodeId = codeIdByPlainName.get(key);
           const transcript = localTranscriptsByFileName.get(entry.transcript_file_name);
-          const iq = codeNameToIq.get(key);
+          const iq = iqByPlainName.get(key);
 
           if (
             !localCodeId ||

@@ -122,17 +122,22 @@ projectsRouter.post("/:id/codebook-import", (req, res) => {
   }
 });
 
-/** Plain 3-column .xlsx import (IQ Text / Code Name / Code Definition) — merges into the Project's
- *  own Codebook by label, no CodedExcerpts created (see codebookExcelService.importFromBuffer). */
+/** 6-column .xlsx or .csv import (document_name / iq_label / iq_text / code_name /
+ *  code_definition / highlight_text) — merges codes into the Project's own Codebook, scoped per
+ *  matched Interview Question, and creates real CodedExcerpts by locating each highlight_text in
+ *  its transcript (see codebookExcelService.importFromBuffer). */
 projectsRouter.post("/:id/codebook-import-excel", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "file is required" });
   try {
-    const result = await codebookExcelService.importFromBuffer(req.params.id, req.file.buffer);
+    const result = await codebookExcelService.importFromBuffer(req.params.id, req.file.buffer, req.file.originalname);
     logger.info("codebook.excel_imported", {
       project_id: req.params.id,
       codes_created: result.codesCreated,
-      codes_updated: result.codesUpdated,
-      unmatched_iq_count: result.unmatchedIqCount,
+      codes_reused: result.codesReused,
+      codes_failed: result.codesFailed,
+      excerpts_created: result.excerptsCreated,
+      unmapped_iq_count: result.unmappedIq.length,
+      not_found_count: result.notFound.length,
     });
     res.status(201).json(result);
   } catch (err) {

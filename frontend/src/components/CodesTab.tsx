@@ -88,6 +88,7 @@ export function CodesTab({
     try {
       await qualitativeCodesApi.create({
         codebook_id: ownCodebook.id,
+        interview_question_id: null,
         label: newLabel.trim(),
         description: newDescription.trim() || newLabel.trim(),
         theme: null,

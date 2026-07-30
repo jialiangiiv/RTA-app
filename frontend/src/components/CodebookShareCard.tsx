@@ -9,7 +9,6 @@ import {
 import { codebooksApi } from "../api/codebooks";
 import { Project, TranscriptSummary } from "../types/domain";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface CodebookShareCardProps {
@@ -66,6 +65,7 @@ export function CodebookShareCard({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [excelStep, setExcelStep] = useState<ExcelStep | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const excelFileRef = useRef<HTMLInputElement>(null);
 
   async function handlePickExcelFile(e: ChangeEvent<HTMLInputElement>) {
@@ -141,57 +141,71 @@ export function CodebookShareCard({
 
   return (
     <div className="space-y-2">
-      <div className="space-y-1">
-        <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
-        <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
-          Import Codebook (.json)
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Automatically highlights the matching text in your transcripts.
-        </p>
-      </div>
+      <input ref={fileRef} type="file" accept=".json" onChange={handlePickFile} className="hidden" />
+      <input ref={excelFileRef} type="file" accept=".xlsx,.csv" onChange={handlePickExcelFile} className="hidden" />
 
-      <div className="space-y-1">
-        <input ref={excelFileRef} type="file" accept=".xlsx" onChange={handlePickExcelFile} className="hidden" />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full"
-          disabled={excelStep?.kind === "importing"}
-          onClick={() => excelFileRef.current?.click()}
-        >
-          {excelStep?.kind === "importing" ? "Importing…" : "Import Codebook (Excel)"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Needs three columns: IQ Text, Code Name, Code Definition — codes are grouped by Interview
-          Question but not highlighted in the text.
-        </p>
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full justify-between"
+        onClick={() => setToolsOpen((open) => !open)}
+      >
+        Codebook Import / Export
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${toolsOpen ? "rotate-180" : ""}`} />
+      </Button>
 
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="w-full">
-            Export Codebook <ChevronDown className="ml-1 h-3.5 w-3.5" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-56 p-1">
-          <a
-            className="block rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent"
-            href={codebookShareApi.exportUrl(projectId)}
-          >
-            Export as JSON (.json)
-          </a>
-          {ownCodebookId && (
-            <a
-              className="block rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent"
-              href={codebooksApi.exportUrl(ownCodebookId)}
+      {toolsOpen && (
+        <div className="flex flex-col gap-3">
+          <div className="space-y-1">
+            <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()}>
+              Import (.json)
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Import a Codebook Share export from another coder on this project — automatically
+              highlights the matching text in your transcripts.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={excelStep?.kind === "importing"}
+              onClick={() => excelFileRef.current?.click()}
             >
-              Export as Excel (.xlsx)
-            </a>
-          )}
-        </PopoverContent>
-      </Popover>
+              {excelStep?.kind === "importing" ? "Importing…" : "Import (Excel/CSV)"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Import codes and highlights from a spreadsheet (document_name, iq_label, iq_text,
+              code_name, code_definition, highlight_text columns).
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Button asChild type="button" variant="outline" size="sm" className="w-full">
+              <a href={codebookShareApi.exportUrl(projectId)}>Export (.json)</a>
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Download this project's codes and highlights to share with another coder.
+            </p>
+          </div>
+          <div className="space-y-1">
+            {ownCodebookId ? (
+              <Button asChild type="button" variant="outline" size="sm" className="w-full">
+                <a href={codebooksApi.exportUrl(ownCodebookId)}>Export (.xlsx)</a>
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled>
+                Export (.xlsx)
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Download a read-only spreadsheet snapshot of this codebook's codes and highlights.
+            </p>
+          </div>
+        </div>
+      )}
       {parseError && <p className="text-xs text-destructive">{parseError}</p>}
 
       <Dialog open={step !== null} onOpenChange={(open) => !open && step?.kind !== "importing" && close()}>
@@ -345,32 +359,62 @@ export function CodebookShareCard({
                 <DialogTitle>Excel import complete</DialogTitle>
                 <DialogDescription>
                   {excelStep.result.codesCreated} code{excelStep.result.codesCreated === 1 ? "" : "s"} added,{" "}
-                  {excelStep.result.codesUpdated} updated. No highlights were created.
+                  {excelStep.result.codesReused} reused
+                  {excelStep.result.codesFailed > 0
+                    ? `, ${excelStep.result.codesFailed} failed`
+                    : ""}
+                  . {excelStep.result.excerptsCreated} highlight
+                  {excelStep.result.excerptsCreated === 1 ? "" : "s"} imported.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-1 text-sm">
-                {excelStep.result.byInterviewQuestion.length === 0 ? (
-                  <p className="text-muted-foreground">No rows matched an Interview Question by text.</p>
-                ) : (
-                  <>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Codes by Interview Question
+              <div className="max-h-72 space-y-3 overflow-y-auto text-sm">
+                {excelStep.result.unmappedIq.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Unmapped Interview Questions ({excelStep.result.unmappedIq.length})
                     </p>
                     <ul className="space-y-0.5">
-                      {excelStep.result.byInterviewQuestion.map((r) => (
-                        <li key={r.iq_label}>
-                          {r.iq_label}: {r.count} code{r.count === 1 ? "" : "s"}
+                      {excelStep.result.unmappedIq.map((row, i) => (
+                        <li key={i} className="text-destructive">
+                          {row.document_name} — "{row.code_name}" under "{row.iq_label}" ({row.iq_text})
                         </li>
                       ))}
                     </ul>
-                  </>
+                  </div>
                 )}
-                {excelStep.result.unmatchedIqCount > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {excelStep.result.unmatchedIqCount} row{excelStep.result.unmatchedIqCount === 1 ? "" : "s"} didn't
-                    match any Interview Question by text.
-                  </p>
+                {excelStep.result.notFound.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Highlights not imported ({excelStep.result.notFound.length})
+                    </p>
+                    <ul className="space-y-0.5">
+                      {excelStep.result.notFound.map((row, i) => (
+                        <li key={i} className="text-destructive">
+                          {row.document_name} — "{row.code_name}": {row.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
+                {excelStep.result.failedCodes.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Codes that failed to create ({excelStep.result.failedCodes.length})
+                    </p>
+                    <ul className="space-y-0.5">
+                      {excelStep.result.failedCodes.map((row, i) => (
+                        <li key={i} className="text-destructive">
+                          "{row.code_name}" under "{row.iq_label}": {row.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {excelStep.result.unmappedIq.length === 0 &&
+                  excelStep.result.notFound.length === 0 &&
+                  excelStep.result.failedCodes.length === 0 && (
+                    <p className="text-muted-foreground">Every row imported cleanly.</p>
+                  )}
               </div>
               <DialogFooter>
                 <Button size="sm" onClick={closeExcel}>

@@ -51,41 +51,16 @@ export const codebookVersionsService = {
 
       try {
         const existingCodes = qualitativeCodesService.listByCodebook(cloned.id);
-        const byLabel = new Map(existingCodes.map((qc) => [qc.label.trim().toLowerCase(), qc]));
-        const codeNameToId = new Map<string, string>();
-        const codeNameToIq = new Map<string, { id: string }>();
+        function codeKey(iqId: string | null, label: string): string {
+          return `${iqId ?? "∅"}|${label.trim().toLowerCase()}`;
+        }
+        // Keyed by (IQ, label) instead of label alone — the same code_name can legitimately exist
+        // under two different IQs, so upsert/dedup must be scoped per-IQ.
+        const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.interview_question_id, qc.label), qc]));
 
         const localIqs = interviewQuestionsService.listByProject(projectId);
         const localIqsByLabel = new Map(localIqs.map((iq) => [iq.label.trim().toLowerCase(), iq]));
         const localIqsByText = new Map(localIqs.map((iq) => [iq.text.trim().toLowerCase(), iq]));
-
-        for (const accepted of input.accepted) {
-          const key = accepted.code_name.trim().toLowerCase();
-          const match = byLabel.get(key);
-          if (match) {
-            qualitativeCodesService.update(match.id, {
-              description: accepted.code_definition || match.description,
-            });
-            codeNameToId.set(key, match.id);
-          } else {
-            const created = qualitativeCodesService.create({
-              codebook_id: cloned.id,
-              label: accepted.code_name,
-              description: accepted.code_definition || accepted.code_name,
-              theme: null,
-              example_quote: null,
-              color: null,
-            });
-            byLabel.set(key, created);
-            codeNameToId.set(key, created.id);
-            codesAccepted++;
-          }
-
-          const iq =
-            localIqsByLabel.get(accepted.iq_label.trim().toLowerCase()) ??
-            localIqsByText.get(accepted.iq_text.trim().toLowerCase());
-          if (iq) codeNameToIq.set(key, iq);
-        }
 
         const localTranscriptsByFileName = new Map(
           transcriptsService.listByProject(projectId).map((t) => [t.file_name, t])
@@ -107,11 +82,38 @@ export const codebookVersionsService = {
 
         const createdByTranscript = new Map<string, number>();
 
+        // Single pass per accepted code: resolve its IQ, upsert its code, then immediately create
+        // its excerpts — keeps the code/IQ pairing exact for THIS entry, rather than re-looking it
+        // up later by a plain code_name that could now be shared across differently-IQ'd codes.
         for (const accepted of input.accepted) {
-          const key = accepted.code_name.trim().toLowerCase();
-          const localCodeId = codeNameToId.get(key);
-          const iq = codeNameToIq.get(key);
-          if (!localCodeId || !iq) {
+          const iq =
+            localIqsByLabel.get(accepted.iq_label.trim().toLowerCase()) ??
+            localIqsByText.get(accepted.iq_text.trim().toLowerCase());
+
+          const key = codeKey(iq?.id ?? null, accepted.code_name);
+          const match = byKey.get(key);
+          let codeId: string;
+          if (match) {
+            qualitativeCodesService.update(match.id, {
+              description: accepted.code_definition || match.description,
+            });
+            codeId = match.id;
+          } else {
+            const created = qualitativeCodesService.create({
+              codebook_id: cloned.id,
+              interview_question_id: iq?.id ?? null,
+              label: accepted.code_name,
+              description: accepted.code_definition || accepted.code_name,
+              theme: null,
+              example_quote: null,
+              color: null,
+            });
+            byKey.set(key, created);
+            codeId = created.id;
+            codesAccepted++;
+          }
+
+          if (!iq) {
             excerptsSkipped += accepted.coded_excerpts.length;
             continue;
           }
@@ -129,7 +131,7 @@ export const codebookVersionsService = {
             }
 
             const keys = existingKeys(transcript.id);
-            const dedupeKey = `${localCodeId}|${entry.start_offset}|${entry.end_offset}`;
+            const dedupeKey = `${codeId}|${entry.start_offset}|${entry.end_offset}`;
             if (keys.has(dedupeKey)) {
               excerptsSkipped++;
               continue;
@@ -137,7 +139,7 @@ export const codebookVersionsService = {
 
             codedExcerptsService.create({
               transcript_id: transcript.id,
-              qualitative_code_id: localCodeId,
+              qualitative_code_id: codeId,
               interview_question_id: iq.id,
               start_offset: entry.start_offset,
               end_offset: entry.end_offset,

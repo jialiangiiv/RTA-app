@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home } from "lucide-react";
 import { projectsApi } from "../api/projects";
 import { researchQuestionsApi } from "../api/researchQuestions";
 import { qualitativeCodesApi } from "../api/codebooks";
@@ -146,11 +146,13 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     <div className="flex h-screen flex-col bg-background">
       <header className="flex items-center justify-between border-b bg-card px-6 py-3">
         <div className="flex items-center gap-3">
-          <Link to="/projects" className="text-sm text-muted-foreground hover:underline">
-            ← Projects
-          </Link>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/projects" aria-label="Home">
+              <Home className="h-4 w-4" />
+            </Link>
+          </Button>
           <h1 className="font-display text-xl">{project?.name ?? "…"}</h1>
-          <Button asChild variant="ghost" size="sm">
+          <Button asChild variant="outline" size="sm">
             <Link to={`/projects/${projectId}/setup`}>Project Setup</Link>
           </Button>
         </div>

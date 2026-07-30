@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS codebooks (
 CREATE TABLE IF NOT EXISTS qualitative_codes (
   id TEXT PRIMARY KEY,
   codebook_id TEXT NOT NULL REFERENCES codebooks(id) ON DELETE CASCADE,
+  -- Which Interview Question this code was created under, if any. NULL for codes created through
+  -- the manual coding UI (unscoped, unique among other NULL-IQ codes in the codebook) — only the
+  -- Excel codebook import currently sets this, to reuse a code across rows sharing the same IQ
+  -- without colliding with a same-named code under a different IQ.
+  interview_question_id TEXT REFERENCES interview_questions(id) ON DELETE CASCADE,
   label TEXT NOT NULL,
   description TEXT NOT NULL,
   theme TEXT,
@@ -148,6 +153,10 @@ CREATE INDEX IF NOT EXISTS idx_transcripts_project ON transcripts(project_id);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_transcript ON bookmarks(transcript_id);
 CREATE INDEX IF NOT EXISTS idx_codebooks_project ON codebooks(project_id);
 CREATE INDEX IF NOT EXISTS idx_qualitative_codes_codebook ON qualitative_codes(codebook_id);
+-- idx_qualitative_codes_iq is created in migrate.ts, AFTER the addColumnIfMissing call for
+-- interview_question_id — an unconditional CREATE INDEX here would break on any pre-existing
+-- database, since this whole file runs (via CREATE TABLE IF NOT EXISTS no-ops) before that column
+-- migration has a chance to add the column to an already-existing qualitative_codes table.
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_transcript ON coded_excerpts(transcript_id);
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_iq ON coded_excerpts(interview_question_id);
 CREATE INDEX IF NOT EXISTS idx_coded_excerpts_code ON coded_excerpts(qualitative_code_id);

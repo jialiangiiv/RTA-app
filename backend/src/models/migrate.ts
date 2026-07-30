@@ -39,6 +39,12 @@ function migrate() {
     (col) => col.name === "active_codebook_id"
   ));
   addColumnIfMissing("projects", "active_codebook_id", "TEXT REFERENCES codebooks(id)");
+  addColumnIfMissing(
+    "qualitative_codes",
+    "interview_question_id",
+    "TEXT REFERENCES interview_questions(id) ON DELETE CASCADE"
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_qualitative_codes_iq ON qualitative_codes(interview_question_id)");
   if (addedActiveCodebook) {
     // Backfill: point every pre-existing Project at its (first) 'own' Codebook so versioning
     // has a starting point instead of every project appearing to have no active Codebook.

@@ -42,9 +42,12 @@ export interface CodebookShareImportResult {
 
 export interface CodebookExcelImportResult {
   codesCreated: number;
-  codesUpdated: number;
-  byInterviewQuestion: Array<{ iq_label: string; count: number }>;
-  unmatchedIqCount: number;
+  codesReused: number;
+  codesFailed: number;
+  excerptsCreated: number;
+  unmappedIq: Array<{ document_name: string; iq_label: string; iq_text: string; code_name: string }>;
+  notFound: Array<{ document_name: string; code_name: string; highlight_text: string; reason: string }>;
+  failedCodes: Array<{ code_name: string; iq_label: string; reason: string }>;
 }
 
 export const codebookShareApi = {
@@ -52,7 +55,8 @@ export const codebookShareApi = {
   parseFile: async (file: File): Promise<CodebookShareBundle> => JSON.parse(await file.text()),
   import: (projectId: string, bundle: CodebookShareBundle, mode: "merge" | "substitute") =>
     apiClient.post<CodebookShareImportResult>(`/projects/${projectId}/codebook-import`, { bundle, mode }),
-  /** Plain 3-column .xlsx (IQ Text / Code Name / Code Definition) — no CodedExcerpts created. */
+  /** 6-column .xlsx or .csv (document_name / iq_label / iq_text / code_name / code_definition /
+   *  highlight_text) — creates real CodedExcerpts by locating each highlight in its transcript. */
   importExcel: (projectId: string, file: File) => {
     const formData = new FormData();
     formData.append("file", file);

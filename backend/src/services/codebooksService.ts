@@ -102,6 +102,7 @@ export const codebooksService = {
     for (const code of qualitativeCodesService.listByCodebook(source.id)) {
       const newCode = qualitativeCodesService.create({
         codebook_id: cloned.id,
+        interview_question_id: code.interview_question_id,
         label: code.label,
         description: code.description,
         theme: code.theme,

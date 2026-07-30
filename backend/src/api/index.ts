@@ -10,6 +10,7 @@ import { qualitativeCodesRouter } from "./qualitativeCodes";
 import { codedExcerptsRouter } from "./codedExcerpts";
 import { affinityNodesRouter } from "./affinityNodes";
 import { tagsRouter } from "./tags";
+import { comparisonSessionsRouter } from "./comparisonSessions";
 
 export const apiRouter = Router();
 
@@ -24,3 +25,4 @@ apiRouter.use("/qualitative-codes", qualitativeCodesRouter);
 apiRouter.use("/coded-excerpts", codedExcerptsRouter);
 apiRouter.use("/affinity-nodes", affinityNodesRouter);
 apiRouter.use("/tags", tagsRouter);
+apiRouter.use("/comparison-sessions", comparisonSessionsRouter);

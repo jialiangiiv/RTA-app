@@ -1,9 +1,10 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Search, ChevronUp, ChevronDown, X } from "lucide-react";
 import { codebooksApi, qualitativeCodesApi } from "../api/codebooks";
 import { codebookVersionsApi } from "../api/codebookVersions";
 import { Codebook, CodedExcerpt, Project, QualitativeCode, TranscriptSummary } from "../types/domain";
 import { CodebookShareCard } from "./CodebookShareCard";
+import { MergeCodesDialog } from "./MergeCodesDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,6 +58,26 @@ export function CodesTab({
   const [editDescription, setEditDescription] = useState("");
   const [searchingCodeId, setSearchingCodeId] = useState<string | null>(null);
   const [searchIndex, setSearchIndex] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+
+  // Drop selections that no longer correspond to a visible code (e.g. after a filter change or refetch).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const validIds = new Set(qualitativeCodes.map((qc) => qc.id));
+      const next = new Set([...prev].filter((id) => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [qualitativeCodes]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function excerptsForCode(codeId: string): CodedExcerpt[] {
     return codedExcerpts.filter((e) => e.qualitative_code_id === codeId);
@@ -154,6 +175,14 @@ export function CodesTab({
         </Button>
       </div>
 
+      {selectedIds.size >= 2 && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setMergeDialogOpen(true)}>
+            Merge {selectedIds.size} codes
+          </Button>
+        </div>
+      )}
+
       {qualitativeCodes.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {showAllCodes
@@ -196,6 +225,13 @@ export function CodesTab({
             ) : (
               <li key={qc.id}>
                 <div className="flex items-center gap-1 pr-1">
+                  <input
+                    type="checkbox"
+                    className="ml-3 h-4 w-4 shrink-0"
+                    checked={selectedIds.has(qc.id)}
+                    onChange={() => toggleSelected(qc.id)}
+                    aria-label={`Select ${qc.label} to merge`}
+                  />
                   <button
                     className="min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-accent"
                     onClick={() => startEdit(qc)}
@@ -320,6 +356,18 @@ export function CodesTab({
         ownCodebookVersionLabel={ownCodebook?.version_label ?? null}
         transcripts={transcripts}
         onImported={() => {
+          onCodesChanged();
+          onExcerptsChanged();
+        }}
+      />
+
+      <MergeCodesDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        candidates={qualitativeCodes.filter((qc) => selectedIds.has(qc.id))}
+        onMerged={() => {
+          setSelectedIds(new Set());
+          setMergeDialogOpen(false);
           onCodesChanged();
           onExcerptsChanged();
         }}

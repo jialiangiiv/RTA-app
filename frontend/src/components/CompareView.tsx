@@ -1,11 +1,13 @@
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { codebookVersionsApi, AcceptedCode, FinishResult } from "../api/codebookVersions";
 import { codebookShareApi, CodebookShareBundle } from "../api/codebookShare";
 import { qualitativeCodesApi } from "../api/codebooks";
 import { codedExcerptsApi } from "../api/codedExcerpts";
+import { comparisonSessionsApi } from "../api/comparisonSessions";
 import { CodedExcerpt, QualitativeCode, Transcript } from "../types/domain";
 import { TaggedTranscript, TranscriptTag } from "./TaggedTranscript";
+import { CodeTrashDialog } from "./CodeTrashDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,14 +21,20 @@ interface CompareViewProps {
   leftCodedExcerpts: CodedExcerpt[];
   leftQualitativeCodesById: Record<string, QualitativeCode>;
   highlightColor: string;
+  ownCodebookId: string | null;
+  activeInterviewQuestionId: string | null;
+  activeInterviewQuestionLabel: string | null;
+  interviewQuestionLabelById: Record<string, string>;
   onExit: () => void;
   onFinished: () => void;
   onExcerptDeleted: () => void;
+  onCodesChanged: () => void;
 }
 
 type EditTarget = { side: "left" | "right"; key: string; label: string; definition: string };
 
 type Phase =
+  | { kind: "checking-session" }
   | { kind: "import-prompt" }
   | { kind: "import-summary"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "comparing"; bundle: CodebookShareBundle; ownerName: string }
@@ -46,11 +54,16 @@ export function CompareView({
   leftCodedExcerpts,
   leftQualitativeCodesById,
   highlightColor,
+  ownCodebookId,
+  activeInterviewQuestionId,
+  activeInterviewQuestionLabel,
+  interviewQuestionLabelById,
   onExit,
   onFinished,
   onExcerptDeleted,
+  onCodesChanged,
 }: CompareViewProps) {
-  const [phase, setPhase] = useState<Phase>({ kind: "import-prompt" });
+  const [phase, setPhase] = useState<Phase>({ kind: "checking-session" });
   const [importedOwnerName, setImportedOwnerName] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -58,9 +71,38 @@ export function CompareView({
 
   const [acceptedCodeNames, setAcceptedCodeNames] = useState<Set<string>>(new Set());
   const [editedByCodeName, setEditedByCodeName] = useState<Record<string, { label: string; definition: string }>>({});
+  // Session-only: right-margin (imported, not-yet-persisted) codes/occurrences the user has
+  // dismissed. Never touches the backend — there's nothing in the DB to soft-delete pre-accept.
+  const [excludedCodeNames, setExcludedCodeNames] = useState<Set<string>>(new Set());
+  const [excludedRightKeys, setExcludedRightKeys] = useState<Set<string>>(new Set());
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [finishVersionLabel, setFinishVersionLabel] = useState("");
   const [finishOwnerName, setFinishOwnerName] = useState("");
+  const [showAllCodes, setShowAllCodes] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+
+  // On entering Compare, check for a saved (half-finished) session before showing the import
+  // prompt — lets a user resume exactly where they left off after navigating away mid-comparison.
+  useEffect(() => {
+    let cancelled = false;
+    comparisonSessionsApi.get(projectId).then((session) => {
+      if (cancelled) return;
+      if (session) {
+        setAcceptedCodeNames(new Set(session.accepted_code_names));
+        setEditedByCodeName(session.edited_by_code_name);
+        setExcludedCodeNames(new Set(session.excluded_code_names));
+        setExcludedRightKeys(new Set(session.excluded_right_keys));
+        setFinishOwnerName(`${currentUserDisplayName} + ${session.owner_name}`);
+        setPhase({ kind: "comparing", bundle: session.bundle, ownerName: session.owner_name });
+      } else {
+        setPhase({ kind: "import-prompt" });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   function handlePickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -96,12 +138,42 @@ export function CompareView({
     }
   }
 
-  function toggleAccept(codeName: string) {
+  async function trashLeftCode(codeId: string) {
+    if (!window.confirm("Move this code — and all of its highlights — to Trash?")) return;
+    try {
+      await qualitativeCodesApi.remove(codeId);
+      onCodesChanged();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }
+
+  function toggleAccept(codeKey: string) {
     setAcceptedCodeNames((prev) => {
       const next = new Set(prev);
-      const key = keyOf(codeName);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(codeKey)) next.delete(codeKey);
+      else next.add(codeKey);
+      return next;
+    });
+  }
+
+  function excludeRightHighlight(tagKey: string) {
+    setExcludedRightKeys((prev) => new Set(prev).add(tagKey));
+  }
+
+  function excludeRightCode(codeKey: string) {
+    if (!window.confirm("Exclude this imported code (and all of its proposed highlights) from this comparison?")) return;
+    setExcludedCodeNames((prev) => new Set(prev).add(codeKey));
+    setAcceptedCodeNames((prev) => {
+      if (!prev.has(codeKey)) return prev;
+      const next = new Set(prev);
+      next.delete(codeKey);
+      return next;
+    });
+    setEditedByCodeName((prev) => {
+      if (!(codeKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[codeKey];
       return next;
     });
   }
@@ -114,6 +186,7 @@ export function CompareView({
           label: editTarget.label.trim(),
           description: editTarget.definition.trim(),
         });
+        onCodesChanged();
       } catch (err) {
         window.alert((err as Error).message);
         return;
@@ -127,12 +200,30 @@ export function CompareView({
     setEditTarget(null);
   }
 
+  async function saveSession() {
+    if (!bundle) return;
+    try {
+      await comparisonSessionsApi.save({
+        project_id: projectId,
+        owner_name: ownerName,
+        bundle,
+        accepted_code_names: Array.from(acceptedCodeNames),
+        edited_by_code_name: editedByCodeName,
+        excluded_code_names: Array.from(excludedCodeNames),
+        excluded_right_keys: Array.from(excludedRightKeys),
+      });
+      onExit();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }
+
   async function submitFinish(bundle: CodebookShareBundle) {
     if (!finishVersionLabel.trim()) return;
     setPhase({ kind: "finishing" });
     try {
       const accepted: AcceptedCode[] = bundle.codes
-        .filter((c) => acceptedCodeNames.has(keyOf(c.code_name)))
+        .filter((c) => acceptedCodeNames.has(keyOf(c.code_name)) && !excludedCodeNames.has(keyOf(c.code_name)))
         .map((c) => {
           const key = keyOf(c.code_name);
           const edited = editedByCodeName[key];
@@ -163,9 +254,22 @@ export function CompareView({
     }
   }
 
+  const leftExcerptCodeId = useMemo(
+    () => new Map(leftCodedExcerpts.map((e) => [e.id, e.qualitative_code_id])),
+    [leftCodedExcerpts]
+  );
+
+  const filteredLeftExcerpts = useMemo(
+    () =>
+      showAllCodes || !activeInterviewQuestionId
+        ? leftCodedExcerpts
+        : leftCodedExcerpts.filter((e) => e.interview_question_id === activeInterviewQuestionId),
+    [leftCodedExcerpts, showAllCodes, activeInterviewQuestionId]
+  );
+
   const leftTags: TranscriptTag[] = useMemo(
     () =>
-      leftCodedExcerpts.map((e) => {
+      filteredLeftExcerpts.map((e) => {
         const code = leftQualitativeCodesById[e.qualitative_code_id];
         return {
           key: e.id,
@@ -173,13 +277,16 @@ export function CompareView({
           end_offset: e.end_offset,
           label: code?.label ?? "code",
           definition: code?.description ?? "",
+          iqLabel: interviewQuestionLabelById[e.interview_question_id],
         };
       }),
-    [leftCodedExcerpts, leftQualitativeCodesById]
+    [filteredLeftExcerpts, leftQualitativeCodesById, interviewQuestionLabelById]
   );
 
-  const comparing = phase.kind === "comparing" || phase.kind === "finish-prompt";
-  const bundle = phase.kind === "comparing" || phase.kind === "finish-prompt" ? phase.bundle : null;
+  const comparing =
+    phase.kind === "comparing" || phase.kind === "finish-prompt" || phase.kind === "finishing" || phase.kind === "done";
+  const bundle =
+    phase.kind === "comparing" || phase.kind === "finish-prompt" ? phase.bundle : null;
   const ownerName = phase.kind === "comparing" || phase.kind === "finish-prompt" ? phase.ownerName : "";
 
   const rightTags: TranscriptTag[] = useMemo(() => {
@@ -198,9 +305,22 @@ export function CompareView({
           label: edited?.label ?? info?.code_name ?? e.code_name,
           definition: edited?.definition ?? info?.code_definition ?? "",
           accepted: acceptedCodeNames.has(key),
+          codeKey: key,
+          iqLabel: info?.iq_label,
         };
-      });
-  }, [bundle, activeTranscript.file_name, editedByCodeName, acceptedCodeNames]);
+      })
+      .filter((tag) => !excludedCodeNames.has(tag.codeKey!) && !excludedRightKeys.has(tag.key))
+      .filter((tag) => showAllCodes || !activeInterviewQuestionLabel || tag.iqLabel === activeInterviewQuestionLabel);
+  }, [
+    bundle,
+    activeTranscript.file_name,
+    editedByCodeName,
+    acceptedCodeNames,
+    excludedCodeNames,
+    excludedRightKeys,
+    showAllCodes,
+    activeInterviewQuestionLabel,
+  ]);
 
   // Once a right-side (imported) tag is accepted, it moves out of the "Imported codes" column and
   // into "Your codes" alongside your own excerpts — shown in a third color so it's still visible
@@ -213,16 +333,37 @@ export function CompareView({
 
   return (
     <div className="space-y-4">
+      {phase.kind === "checking-session" && (
+        <div className="flex items-center justify-center gap-3 rounded-md border bg-card p-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Checking for a saved comparison…
+        </div>
+      )}
+
       {comparing && (
         <div className="flex items-center justify-between rounded-md border bg-card p-3">
           <div>
             <p className="text-sm font-medium">Comparing with {ownerName}</p>
             <p className="text-xs text-muted-foreground">
               Left: your codes. Right: hover a tag to preview, then accept the ones you want — accepted tags move to
-              the left in green.
+              the left in green.{" "}
+              {showAllCodes
+                ? "Showing all codes."
+                : activeInterviewQuestionLabel
+                  ? `Filtered to "${activeInterviewQuestionLabel}".`
+                  : ""}
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowAllCodes((v) => !v)}>
+              {showAllCodes ? "Show this IQ only" : "Show all codes"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
+              Trash
+            </Button>
+            <Button variant="ghost" size="sm" onClick={saveSession}>
+              Save &amp; Exit
+            </Button>
             <Button variant="ghost" size="sm" onClick={onExit}>
               Cancel
             </Button>
@@ -252,20 +393,49 @@ export function CompareView({
             highlightColor={highlightColor}
             renderLeftActions={(tag) =>
               tag.key.startsWith("right-") ? (
-                <Button size="sm" variant="outline" onClick={() => toggleAccept(tag.label)}>
-                  Reject
-                </Button>
+                <>
+                  <Button size="sm" variant="outline" onClick={() => toggleAccept(tag.codeKey ?? keyOf(tag.label))}>
+                    Reject
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => excludeRightHighlight(tag.key)}>
+                    Delete this highlight
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => excludeRightCode(tag.codeKey ?? keyOf(tag.label))}
+                  >
+                    Delete code
+                  </Button>
+                </>
               ) : (
                 <>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setEditTarget({ side: "left", key: tag.key, label: tag.label, definition: tag.definition })}
+                    onClick={() =>
+                      setEditTarget({
+                        side: "left",
+                        key: leftExcerptCodeId.get(tag.key) ?? tag.key,
+                        label: tag.label,
+                        definition: tag.definition,
+                      })
+                    }
                   >
                     Edit
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => deleteLeftExcerpt(tag.key)}>
-                    Delete
+                  <Button size="sm" variant="outline" onClick={() => deleteLeftExcerpt(tag.key)}>
+                    Delete this highlight
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      const codeId = leftExcerptCodeId.get(tag.key);
+                      if (codeId) trashLeftCode(codeId);
+                    }}
+                  >
+                    Delete code
                   </Button>
                 </>
               )
@@ -275,18 +445,37 @@ export function CompareView({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setEditTarget({ side: "right", key: keyOf(tag.label), label: tag.label, definition: tag.definition })}
+                  onClick={() =>
+                    setEditTarget({
+                      side: "right",
+                      key: tag.codeKey ?? keyOf(tag.label),
+                      label: tag.label,
+                      definition: tag.definition,
+                    })
+                  }
                 >
                   Edit
                 </Button>
-                <Button size="sm" onClick={() => toggleAccept(tag.label)}>
+                <Button size="sm" onClick={() => toggleAccept(tag.codeKey ?? keyOf(tag.label))}>
                   Accept
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => excludeRightHighlight(tag.key)}>
+                  Delete this highlight
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => excludeRightCode(tag.codeKey ?? keyOf(tag.label))}
+                >
+                  Delete code
                 </Button>
               </>
             )}
           />
         </div>
       )}
+
+      <CodeTrashDialog codebookId={ownCodebookId} open={trashOpen} onOpenChange={setTrashOpen} onRestored={onCodesChanged} />
 
       <Dialog open={phase.kind === "import-prompt"} onOpenChange={(open) => !open && onExit()}>
         <DialogContent>

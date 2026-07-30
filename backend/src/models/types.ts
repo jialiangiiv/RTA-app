@@ -97,6 +97,9 @@ export interface QualitativeCode {
   example_quote: string | null;
   color: string | null;
   created_at: string;
+  /** Soft-delete marker: null means live. Set when the whole code is deleted from Compare's
+   *  "Delete code" action; restorable from the trash until purged. */
+  deleted_at: string | null;
 }
 
 export interface CodedExcerpt {

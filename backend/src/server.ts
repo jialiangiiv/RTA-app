@@ -10,7 +10,9 @@ import "./models/migrate";
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// Raised from Express's 100kb default — a saved comparison session stores a full imported
+// codebook bundle (codes + excerpts) as JSON, which can exceed that for larger transcripts.
+app.use(express.json({ limit: "15mb" }));
 app.use("/api", apiRouter);
 
 app.get("/health", (_req, res) => {

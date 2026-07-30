@@ -87,7 +87,12 @@ CREATE TABLE IF NOT EXISTS qualitative_codes (
   theme TEXT,
   example_quote TEXT,
   color TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- Soft-delete marker: NULL means live. Set when a whole code (and thus every one of its
+  -- highlights) is deleted via the Compare page's "Delete code" action, so it can be recovered
+  -- from the trash rather than being lost immediately. Every read path goes through
+  -- qualitativeCodesService, which filters this — see migrate.ts for the existing-DB column add.
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS coded_excerpts (
@@ -131,6 +136,26 @@ CREATE TABLE IF NOT EXISTS affinity_nodes (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- One in-progress Compare-page session per Project (unique on project_id, upserted on save) — lets
+-- a user "Save & Exit" mid-comparison and resume exactly where they left off later. Everything
+-- needed to rebuild CompareView's client state is stored as JSON: the full imported bundle plus
+-- the accept/edit/exclude decisions made so far. Deleted once the comparison is finished (see
+-- codebookVersionsService.finish) or explicitly discarded by the user.
+CREATE TABLE IF NOT EXISTS comparison_sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  owner_name TEXT NOT NULL,
+  bundle_json TEXT NOT NULL,
+  accepted_code_names_json TEXT NOT NULL,
+  edited_by_code_name_json TEXT NOT NULL,
+  excluded_code_names_json TEXT NOT NULL,
+  excluded_right_keys_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_comparison_sessions_project ON comparison_sessions(project_id);
 
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,

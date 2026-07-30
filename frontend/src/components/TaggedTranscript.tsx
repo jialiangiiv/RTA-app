@@ -7,6 +7,11 @@ export interface TranscriptTag {
   label: string;
   definition: string;
   accepted?: boolean;
+  /** Stable identity actions should key off — e.g. the original (pre-edit) code name — since
+   *  `label` can change after an edit. Falls back to `key` when omitted. */
+  codeKey?: string;
+  /** Interview Question this code belongs to, shown in the hover popup. */
+  iqLabel?: string;
 }
 
 type TagClassName = string | ((tag: TranscriptTag) => string);
@@ -158,7 +163,8 @@ export function TaggedTranscript({
               <div className="absolute left-0 top-full z-20 mt-1 w-64 space-y-2 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg">
                 <p className="text-sm font-semibold">{tag.label}</p>
                 <p className="text-xs text-muted-foreground">{tag.definition || "No definition."}</p>
-                {renderActions && <div className="flex gap-2 pt-1">{renderActions(tag)}</div>}
+                {tag.iqLabel && <p className="text-[11px] text-muted-foreground">IQ: {tag.iqLabel}</p>}
+                {renderActions && <div className="flex flex-wrap gap-2 pt-1">{renderActions(tag)}</div>}
               </div>
             )}
           </div>

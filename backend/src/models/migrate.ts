@@ -45,6 +45,8 @@ function migrate() {
     "TEXT REFERENCES interview_questions(id) ON DELETE CASCADE"
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_qualitative_codes_iq ON qualitative_codes(interview_question_id)");
+  addColumnIfMissing("qualitative_codes", "deleted_at", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_qualitative_codes_deleted_at ON qualitative_codes(deleted_at)");
   if (addedActiveCodebook) {
     // Backfill: point every pre-existing Project at its (first) 'own' Codebook so versioning
     // has a starting point instead of every project appearing to have no active Codebook.

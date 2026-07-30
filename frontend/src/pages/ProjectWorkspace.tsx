@@ -127,6 +127,15 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     [qualitativeCodes, iqCodeIds, showAllCodes]
   );
   const activeInterviewQuestionLabel = interviewQuestions.find((iq) => iq.id === activeInterviewQuestionId)?.label ?? null;
+  const interviewQuestionLabelById = useMemo(
+    () => Object.fromEntries(interviewQuestions.map((iq) => [iq.id, iq.label])),
+    [interviewQuestions]
+  );
+
+  function refreshCodesAndExcerpts() {
+    refreshCodes();
+    refreshExcerpts();
+  }
 
   function refreshExcerpts() {
     refreshCodedExcerpts();
@@ -231,6 +240,10 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
               leftCodedExcerpts={visibleCodedExcerpts}
               leftQualitativeCodesById={qualitativeCodesById}
               highlightColor={project?.highlight_color ?? "#b0461d"}
+              ownCodebookId={activeCodebook?.id ?? null}
+              activeInterviewQuestionId={activeInterviewQuestionId}
+              activeInterviewQuestionLabel={activeInterviewQuestionLabel}
+              interviewQuestionLabelById={interviewQuestionLabelById}
               onExit={() => setCenterMode("coding")}
               onFinished={() => {
                 refreshProject();
@@ -239,6 +252,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                 refreshExcerpts();
               }}
               onExcerptDeleted={refreshExcerpts}
+              onCodesChanged={refreshCodesAndExcerpts}
             />
           ) : (
             <TranscriptView

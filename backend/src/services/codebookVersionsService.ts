@@ -4,6 +4,7 @@ import { codedExcerptsService } from "./codedExcerptsService";
 import { transcriptsService } from "./transcriptsService";
 import { interviewQuestionsService } from "./interviewQuestionsService";
 import { projectsService } from "./projectsService";
+import { comparisonSessionsService } from "./comparisonSessionsService";
 import { db } from "../core/db";
 import { Codebook } from "../models/types";
 
@@ -152,6 +153,8 @@ export const codebookVersionsService = {
         }
 
         projectsService.setActiveCodebook(projectId, cloned.id);
+        // A finished comparison has nothing left to resume — drop any saved in-progress session.
+        comparisonSessionsService.removeByProject(projectId);
 
         return {
           codebook: cloned,

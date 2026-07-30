@@ -13,9 +13,18 @@ export const codebooksApi = {
 export const qualitativeCodesApi = {
   listByCodebook: (codebookId: string) =>
     apiClient.get<QualitativeCode[]>(`/qualitative-codes?codebook_id=${codebookId}`),
-  create: (input: Omit<QualitativeCode, "id" | "created_at">) =>
+  create: (input: Omit<QualitativeCode, "id" | "created_at" | "deleted_at">) =>
     apiClient.post<QualitativeCode>("/qualitative-codes", input),
   update: (id: string, updates: Partial<QualitativeCode>) =>
     apiClient.patch<QualitativeCode>(`/qualitative-codes/${id}`, updates),
+  /** Soft-deletes the whole code (and, transitively, its highlights) — recoverable via restore(). */
   remove: (id: string) => apiClient.delete<void>(`/qualitative-codes/${id}`),
+  listTrashed: (codebookId: string) =>
+    apiClient.get<QualitativeCode[]>(`/qualitative-codes/trash?codebook_id=${codebookId}`),
+  restore: (id: string) => apiClient.post<QualitativeCode>(`/qualitative-codes/${id}/restore`, {}),
+  purge: (id: string) => apiClient.delete<void>(`/qualitative-codes/${id}/purge`),
+  purgeAll: (codebookId: string) =>
+    apiClient.post<{ purged: number }>(`/qualitative-codes/trash/purge-all`, { codebook_id: codebookId }),
+  merge: (input: { sourceIds: string[]; targetId: string; label?: string; description?: string }) =>
+    apiClient.post<QualitativeCode>("/qualitative-codes/merge", input),
 };

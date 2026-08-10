@@ -22,6 +22,9 @@ interface CodesTabProps {
   qualitativeCodes: QualitativeCode[];
   totalCodeCount: number;
   activeInterviewQuestionLabel: string | null;
+  /** Distinct Interview Question ids each code has actually been used under, project-wide. */
+  codeInterviewQuestionIds: Record<string, string[]>;
+  interviewQuestionLabelById: Record<string, string>;
   showAllCodes: boolean;
   onToggleShowAllCodes: () => void;
   comparisonCodebooks: Codebook[];
@@ -41,6 +44,8 @@ export function CodesTab({
   qualitativeCodes,
   totalCodeCount,
   activeInterviewQuestionLabel,
+  codeInterviewQuestionIds,
+  interviewQuestionLabelById,
   showAllCodes,
   onToggleShowAllCodes,
   comparisonCodebooks,
@@ -114,7 +119,7 @@ export function CodesTab({
     e.preventDefault();
     if (!ownCodebook || !newLabel.trim()) return;
     try {
-      await qualitativeCodesApi.create({
+      const created = await qualitativeCodesApi.create({
         codebook_id: ownCodebook.id,
         interview_question_id: null,
         label: newLabel.trim(),
@@ -126,6 +131,9 @@ export function CodesTab({
       setNewLabel("");
       setNewDescription("");
       onCodesChanged();
+      if (created.reused) {
+        window.alert(`A code named "${created.label}" already exists in this codebook — no duplicate was created.`);
+      }
     } catch (err) {
       window.alert((err as Error).message);
     }
@@ -262,6 +270,18 @@ export function CodesTab({
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {qc.description || "No definition."}
                         </p>
+                        {(codeInterviewQuestionIds[qc.id]?.length ?? 0) > 0 && (
+                          <p className="mt-1 flex flex-wrap gap-1">
+                            {codeInterviewQuestionIds[qc.id].map((iqId) => (
+                              <span
+                                key={iqId}
+                                className="rounded-full border bg-accent/60 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground"
+                              >
+                                {interviewQuestionLabelById[iqId] ?? "Unknown IQ"}
+                              </span>
+                            ))}
+                          </p>
+                        )}
                       </button>
                       <Button
                         variant="ghost"

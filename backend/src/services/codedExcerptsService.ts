@@ -23,6 +23,26 @@ export const codedExcerptsService = {
       .all(interviewQuestionId) as CodedExcerpt[];
   },
 
+  /** Distinct interview_question_ids each code in this Codebook has actually been applied under,
+   *  across every Transcript in the Project — since a code is no longer scoped to one "home" IQ
+   *  (see qualitativeCodesService), this is the real source of truth for "which IQ(s) does this
+   *  code belong to", derived from its CodedExcerpts rather than any field on the code itself. */
+  codeInterviewQuestionMap(codebookId: string): Record<string, string[]> {
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT ce.qualitative_code_id AS code_id, ce.interview_question_id AS iq_id
+         FROM coded_excerpts ce
+         JOIN qualitative_codes qc ON qc.id = ce.qualitative_code_id
+         WHERE qc.codebook_id = ?`
+      )
+      .all(codebookId) as { code_id: string; iq_id: string }[];
+    const map: Record<string, string[]> = {};
+    for (const row of rows) {
+      (map[row.code_id] ??= []).push(row.iq_id);
+    }
+    return map;
+  },
+
   create(input: {
     transcript_id: string;
     qualitative_code_id: string;

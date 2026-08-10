@@ -11,4 +11,8 @@ export const codedExcerptsApi = {
   update: (id: string, updates: Partial<Pick<CodedExcerpt, "qualitative_code_id" | "memo">>) =>
     apiClient.patch<CodedExcerpt>(`/coded-excerpts/${id}`, updates),
   remove: (id: string) => apiClient.delete<void>(`/coded-excerpts/${id}`),
+  /** Distinct interview_question_ids each code in this Codebook has actually been used under,
+   *  across every Transcript in the Project — keyed by qualitative_code_id. */
+  iqMapByCodebook: (codebookId: string) =>
+    apiClient.get<Record<string, string[]>>(`/coded-excerpts/iq-map?codebook_id=${codebookId}`),
 };

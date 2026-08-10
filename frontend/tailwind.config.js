@@ -12,9 +12,17 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Didot", "Bodoni MT", "Big Caslon", "Hoefler Text", "Georgia", "serif"],
-        sans: ["Avenir Next", "Futura", "Century Gothic", "sans-serif"],
-        reading: ["Hoefler Text", "Iowan Old Style", "Palatino", "Palatino Linotype", "Georgia", "serif"],
+        // Each stack's first entries are macOS-only faces (unavailable on Windows, so Windows
+        // silently skips them). Without a deliberate Windows-native fallback ahead of the last
+        // resort, Windows lands on whatever happens to be installed next — often Century Gothic
+        // (bundled with MS Office), a thin, low-x-height face that reads as faint next to
+        // Avenir Next. "Segoe UI"/"Cambria" are core Windows system fonts (present since Vista,
+        // no Office dependency) chosen specifically for on-screen clarity, inserted just ahead of
+        // that weak fallback — macOS still matches "Avenir Next"/"Didot" first, so this only
+        // changes what Windows renders.
+        display: ["Didot", "Bodoni MT", "Big Caslon", "Hoefler Text", "Cambria", "Georgia", "serif"],
+        sans: ["Avenir Next", "Futura", "Segoe UI", "Century Gothic", "Helvetica Neue", "Arial", "sans-serif"],
+        reading: ["Hoefler Text", "Iowan Old Style", "Palatino", "Cambria", "Palatino Linotype", "Georgia", "serif"],
         mono: ["Courier New", "SFMono-Regular", "Menlo", "monospace"],
       },
       colors: {

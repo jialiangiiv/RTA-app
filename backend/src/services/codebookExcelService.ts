@@ -158,9 +158,9 @@ export const codebookExcelService = {
     return db.transaction((): CodebookExcelImportResult => {
       const codebook = codebooksService.ensureOwnCodebook(projectId);
       const existingCodes = qualitativeCodesService.listByCodebook(codebook.id);
-      const codesByIqAndLabel = new Map(
-        existingCodes.map((qc) => [`${qc.interview_question_id ?? "∅"}|${normalize(qc.label)}`, qc])
-      );
+      // Keyed by label alone — a code is shared across however many IQs it's used under, not
+      // scoped to a single one; the row's `iq` is still used below to attribute its excerpt.
+      const codesByLabel = new Map(existingCodes.map((qc) => [normalize(qc.label), qc]));
 
       const localIqs = interviewQuestionsService.listByProject(projectId);
       const iqsByLabelAndText = new Map(
@@ -212,8 +212,8 @@ export const codebookExcelService = {
         }
 
         let codeId: string;
-        const codeKey = `${iq.id}|${normalize(codeName)}`;
-        const existingCode = codesByIqAndLabel.get(codeKey);
+        const codeKey = normalize(codeName);
+        const existingCode = codesByLabel.get(codeKey);
         try {
           if (existingCode) {
             const updated = qualitativeCodesService.update(existingCode.id, {
@@ -224,14 +224,14 @@ export const codebookExcelService = {
           } else {
             const created = qualitativeCodesService.create({
               codebook_id: codebook.id,
-              interview_question_id: iq.id,
+              interview_question_id: null,
               label: codeName,
               description: codeDefinition || codeName,
               theme: null,
               example_quote: null,
               color: null,
             });
-            codesByIqAndLabel.set(codeKey, created);
+            codesByLabel.set(codeKey, created);
             codeId = created.id;
             codesCreated++;
           }

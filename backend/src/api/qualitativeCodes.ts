@@ -40,7 +40,10 @@ qualitativeCodesRouter.post("/", (req, res) => {
     return res.status(400).json({ error: "codebook_id, label, and description are required" });
   }
   try {
-    res.status(201).json(qualitativeCodesService.create(req.body));
+    // Idempotent: a duplicate label returns the existing code (reused: true) rather than erroring,
+    // so callers can apply/select it instead of failing or forking the codebook.
+    const { code, reused } = qualitativeCodesService.createOrGet(req.body);
+    res.status(reused ? 200 : 201).json({ ...code, reused });
   } catch (err) {
     res.status(409).json({ error: (err as Error).message });
   }

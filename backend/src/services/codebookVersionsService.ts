@@ -52,12 +52,12 @@ export const codebookVersionsService = {
 
       try {
         const existingCodes = qualitativeCodesService.listByCodebook(cloned.id);
-        function codeKey(iqId: string | null, label: string): string {
-          return `${iqId ?? "∅"}|${label.trim().toLowerCase()}`;
+        function codeKey(label: string): string {
+          return label.trim().toLowerCase();
         }
-        // Keyed by (IQ, label) instead of label alone — the same code_name can legitimately exist
-        // under two different IQs, so upsert/dedup must be scoped per-IQ.
-        const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.interview_question_id, qc.label), qc]));
+        // Keyed by label alone — a code is shared across however many IQs it's used under, not
+        // scoped to a single one, so upsert/dedup of the code itself ignores IQ entirely.
+        const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.label), qc]));
 
         const localIqs = interviewQuestionsService.listByProject(projectId);
         const localIqsByLabel = new Map(localIqs.map((iq) => [iq.label.trim().toLowerCase(), iq]));
@@ -91,7 +91,7 @@ export const codebookVersionsService = {
             localIqsByLabel.get(accepted.iq_label.trim().toLowerCase()) ??
             localIqsByText.get(accepted.iq_text.trim().toLowerCase());
 
-          const key = codeKey(iq?.id ?? null, accepted.code_name);
+          const key = codeKey(accepted.code_name);
           const match = byKey.get(key);
           let codeId: string;
           if (match) {
@@ -102,7 +102,7 @@ export const codebookVersionsService = {
           } else {
             const created = qualitativeCodesService.create({
               codebook_id: cloned.id,
-              interview_question_id: iq?.id ?? null,
+              interview_question_id: null,
               label: accepted.code_name,
               description: accepted.code_definition || accepted.code_name,
               theme: null,

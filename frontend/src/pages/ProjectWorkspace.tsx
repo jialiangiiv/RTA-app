@@ -7,6 +7,7 @@ import { qualitativeCodesApi } from "../api/codebooks";
 import { useInterviewQuestions } from "../hooks/useInterviewQuestions";
 import { useCodedExcerpts } from "../hooks/useCodedExcerpts";
 import { useCodeIdsForInterviewQuestion } from "../hooks/useCodeIdsForInterviewQuestion";
+import { useCodeInterviewQuestionMap } from "../hooks/useCodeInterviewQuestionMap";
 import { useBookmarks } from "../hooks/useBookmarks";
 import { useCodebooks } from "../hooks/useCodebooks";
 import { useQualitativeCodes } from "../hooks/useQualitativeCodes";
@@ -70,6 +71,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   const activeCodebook = versions.find((cb) => cb.id === project?.active_codebook_id) ?? versions[0] ?? null;
   const comparisonCodebooks = codebooks.filter((cb) => cb.kind === "comparison");
   const { qualitativeCodes, refresh: refreshCodes } = useQualitativeCodes(activeCodebook?.id ?? null);
+  const { codeInterviewQuestionIds, refresh: refreshCodeIqMap } = useCodeInterviewQuestionMap(activeCodebook?.id ?? null);
 
   // Comparison-codebook codes (e.g. a colleague's shared codebook) can have real CodedExcerpts in
   // this Project's transcripts too — fetched separately so only own-codebook codes are offered for
@@ -140,6 +142,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   function refreshExcerpts() {
     refreshCodedExcerpts();
     refreshIqCodeIds();
+    refreshCodeIqMap();
   }
 
   const qualitativeCodesById = useMemo(
@@ -313,6 +316,8 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                   qualitativeCodes={displayedQualitativeCodes}
                   totalCodeCount={qualitativeCodes.length}
                   activeInterviewQuestionLabel={activeInterviewQuestionLabel}
+                  codeInterviewQuestionIds={codeInterviewQuestionIds}
+                  interviewQuestionLabelById={interviewQuestionLabelById}
                   showAllCodes={showAllCodes}
                   onToggleShowAllCodes={() => setShowAllCodes((v) => !v)}
                   comparisonCodebooks={comparisonCodebooks}

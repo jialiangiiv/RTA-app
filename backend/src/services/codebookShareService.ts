@@ -150,19 +150,20 @@ export const codebookShareService = {
         existingCodes = [];
       }
 
-      // Resolve each bundle code's local Interview Question FIRST — matching (and reuse) is scoped
-      // per-IQ, since the same code_name can legitimately exist under two different IQs.
+      // Resolve each bundle code's local Interview Question — used to attribute its CodedExcerpts
+      // to the right IQ below. Matching/reuse of the CODE itself, though, is by label alone: a
+      // code is shared across however many IQs it's used under, not scoped to a single one.
       const localIqs = interviewQuestionsService.listByProject(projectId);
       const localIqsByLabel = new Map(localIqs.map((iq) => [iq.label.trim().toLowerCase(), iq]));
       const localIqsByText = new Map(localIqs.map((iq) => [iq.text.trim().toLowerCase(), iq]));
       function resolveIq(iqLabel: string, iqText: string): InterviewQuestion | undefined {
         return localIqsByLabel.get(iqLabel.trim().toLowerCase()) ?? localIqsByText.get(iqText.trim().toLowerCase());
       }
-      function codeKey(iqId: string | null, label: string): string {
-        return `${iqId ?? "∅"}|${label.trim().toLowerCase()}`;
+      function codeKey(label: string): string {
+        return label.trim().toLowerCase();
       }
 
-      const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.interview_question_id, qc.label), qc]));
+      const byKey = new Map(existingCodes.map((qc) => [codeKey(qc.label), qc]));
       // `bundle.coded_excerpts` entries only carry a plain code_name (no IQ) — these fallback maps
       // resolve them to whichever code/IQ was seen FIRST for that name, same as this flow's old
       // (pre-per-IQ) behavior. Only ambiguous if the bundle genuinely has two same-named codes
@@ -179,7 +180,7 @@ export const codebookShareService = {
           const iq = resolveIq(code.iq_label, code.iq_text);
           if (iq && !iqByPlainName.has(plainName)) iqByPlainName.set(plainName, iq);
 
-          const key = codeKey(iq?.id ?? null, code.code_name);
+          const key = codeKey(code.code_name);
           if (seenKeys.has(key)) continue;
           seenKeys.add(key);
 
@@ -192,7 +193,7 @@ export const codebookShareService = {
           } else {
             const created = qualitativeCodesService.create({
               codebook_id: codebook.id,
-              interview_question_id: iq?.id ?? null,
+              interview_question_id: null,
               label: code.code_name,
               description: code.code_definition || code.code_name,
               theme: null,

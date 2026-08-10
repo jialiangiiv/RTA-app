@@ -142,6 +142,9 @@ export function TranscriptView({
         color: null,
       });
       onCodesChanged();
+      if (created.reused) {
+        window.alert(`A code named "${created.label}" already exists — applied the existing code instead of creating a duplicate.`);
+      }
       await applyCode(created.id);
     } catch (err) {
       window.alert((err as Error).message);

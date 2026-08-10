@@ -3,6 +3,12 @@ import { codedExcerptsService } from "../services/codedExcerptsService";
 
 export const codedExcerptsRouter = Router();
 
+codedExcerptsRouter.get("/iq-map", (req, res) => {
+  const codebookId = req.query.codebook_id as string | undefined;
+  if (!codebookId) return res.status(400).json({ error: "codebook_id query param is required" });
+  res.json(codedExcerptsService.codeInterviewQuestionMap(codebookId));
+});
+
 codedExcerptsRouter.get("/", (req, res) => {
   const transcriptId = req.query.transcript_id as string | undefined;
   const interviewQuestionId = req.query.interview_question_id as string | undefined;

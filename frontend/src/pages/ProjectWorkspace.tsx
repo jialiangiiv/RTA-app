@@ -152,6 +152,16 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     () => codedExcerpts.filter((e) => qualitativeCodesById[e.qualitative_code_id]),
     [codedExcerpts, qualitativeCodesById]
   );
+  // Mirrors displayedQualitativeCodes' showAllCodes scoping, but per-excerpt (via each
+  // CodedExcerpt's own interview_question_id) rather than per-code — so "show this IQ only"
+  // actually hides other IQs' highlights in the transcript instead of just the code list.
+  const codingCodedExcerpts = useMemo(
+    () =>
+      showAllCodes
+        ? visibleCodedExcerpts
+        : visibleCodedExcerpts.filter((e) => e.interview_question_id === activeInterviewQuestionId),
+    [visibleCodedExcerpts, activeInterviewQuestionId, showAllCodes]
+  );
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -257,7 +267,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
           ) : (
             <TranscriptView
               transcript={activeTranscript}
-              codedExcerpts={visibleCodedExcerpts}
+              codedExcerpts={codingCodedExcerpts}
               qualitativeCodes={displayedQualitativeCodes}
               qualitativeCodesById={qualitativeCodesById}
               ownCodebookId={activeCodebook?.id ?? null}
@@ -307,7 +317,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                   onToggleShowAllCodes={() => setShowAllCodes((v) => !v)}
                   comparisonCodebooks={comparisonCodebooks}
                   transcripts={transcripts}
-                  codedExcerpts={visibleCodedExcerpts}
+                  codedExcerpts={codingCodedExcerpts}
                   onCodesChanged={refreshCodes}
                   onCodebooksChanged={() => {
                     refreshCodebooks();

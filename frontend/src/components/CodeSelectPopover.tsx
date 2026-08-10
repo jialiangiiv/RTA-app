@@ -1,13 +1,14 @@
 import { FormEvent, useMemo, useState } from "react";
 import { QualitativeCode } from "../types/domain";
 import { codeLabelClassName } from "../lib/codeLabel";
+import { AnchorRect, useAnchoredPosition } from "../hooks/useAnchoredPosition";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const PAGE_SIZE = 6;
 
 interface CodeSelectPopoverProps {
-  position: { top: number; left: number };
+  anchor: AnchorRect;
   codes: QualitativeCode[];
   onSelect: (code: QualitativeCode) => void;
   onCreateNew: (label: string, description: string) => void;
@@ -17,9 +18,11 @@ interface CodeSelectPopoverProps {
 /**
  * Appears immediately after a text selection: search + paginated list of all q_codes, or
  * create a new one. Anchored to the selection's screen position rather than a fixed trigger
- * element, so this is a hand-positioned overlay rather than Radix Popover.
+ * element, so this is a hand-positioned overlay rather than Radix Popover. Flips above the
+ * anchor when there isn't enough viewport space below it.
  */
-export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onClose }: CodeSelectPopoverProps) {
+export function CodeSelectPopover({ anchor, codes, onSelect, onCreateNew, onClose }: CodeSelectPopoverProps) {
+  const { ref, top } = useAnchoredPosition<HTMLDivElement>(anchor);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [newLabel, setNewLabel] = useState("");
@@ -42,8 +45,9 @@ export function CodeSelectPopover({ position, codes, onSelect, onCreateNew, onCl
     <>
       <div className="fixed inset-0 z-[900]" onClick={onClose} />
       <div
+        ref={ref}
         className="fixed z-[901] flex w-72 max-w-[calc(100vw-2rem)] animate-fade-in flex-col gap-3 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
-        style={{ top: position.top, left: position.left }}
+        style={{ top, left: anchor.left }}
       >
         <Input
           autoFocus

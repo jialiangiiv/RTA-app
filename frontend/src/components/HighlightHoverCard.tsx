@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { QualitativeCode } from "../types/domain";
+import { AnchorRect, useAnchoredPosition } from "../hooks/useAnchoredPosition";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 interface HighlightHoverCardProps {
-  position: { top: number; left: number };
+  anchor: AnchorRect;
   qCode: QualitativeCode | undefined;
   memo: string | null;
   onSave: (updates: { label: string; description: string }) => Promise<void>;
@@ -20,9 +21,10 @@ interface HighlightHoverCardProps {
  * (mouseenter/mouseleave only, never mousemove, so it costs nothing while the pointer travels),
  * and lets the user edit the code's name/definition or delete just this excerpt without ever
  * touching its stored offsets or interrupting a text-selection drag elsewhere in the transcript.
+ * Flips above the highlight when there isn't enough viewport space below it.
  */
 export function HighlightHoverCard({
-  position,
+  anchor,
   qCode,
   memo,
   onSave,
@@ -31,6 +33,7 @@ export function HighlightHoverCard({
   onMouseEnter,
   onMouseLeave,
 }: HighlightHoverCardProps) {
+  const { ref, top } = useAnchoredPosition<HTMLDivElement>(anchor);
   const [label, setLabel] = useState(qCode?.label ?? "");
   const [description, setDescription] = useState(qCode?.description ?? "");
   const [saving, setSaving] = useState(false);
@@ -58,8 +61,9 @@ export function HighlightHoverCard({
 
   return (
     <div
+      ref={ref}
       className="fixed z-[901] w-72 animate-fade-in space-y-2 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
-      style={{ top: position.top, left: position.left }}
+      style={{ top, left: anchor.left }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >

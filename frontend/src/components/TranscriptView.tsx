@@ -24,7 +24,7 @@ interface TranscriptViewProps {
 interface PendingSelection {
   start_offset: number;
   end_offset: number;
-  popoverPosition: { top: number; left: number };
+  anchor: { top: number; bottom: number; left: number };
 }
 
 interface HoveredExcerpt {
@@ -102,7 +102,7 @@ export function TranscriptView({
     setPendingSelection({
       start_offset,
       end_offset,
-      popoverPosition: { top: rect.bottom + window.scrollY + 6, left: rect.left + window.scrollX },
+      anchor: { top: rect.top, bottom: rect.bottom, left: rect.left },
     });
     // Clear the native browser selection now that we've captured its offsets — our own
     // brand-colored `pending` highlight (driven by pendingSelection, see buildSegments) takes
@@ -174,7 +174,7 @@ export function TranscriptView({
       </div>
       {pendingSelection && (
         <CodeSelectPopover
-          position={pendingSelection.popoverPosition}
+          anchor={pendingSelection.anchor}
           codes={qualitativeCodes}
           onSelect={(code) => applyCode(code.id)}
           onCreateNew={handleCreateAndApply}
@@ -184,9 +184,10 @@ export function TranscriptView({
       {hoveredExcerpt && (
         <HighlightHoverCard
           key={hoveredExcerpt.excerpt.id}
-          position={{
-            top: hoveredExcerpt.rect.bottom + window.scrollY + 6,
-            left: hoveredExcerpt.rect.left + window.scrollX,
+          anchor={{
+            top: hoveredExcerpt.rect.top,
+            bottom: hoveredExcerpt.rect.bottom,
+            left: hoveredExcerpt.rect.left,
           }}
           qCode={qualitativeCodesById[hoveredExcerpt.excerpt.qualitative_code_id]}
           memo={hoveredExcerpt.excerpt.memo}

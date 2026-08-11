@@ -21,16 +21,6 @@ interviewQuestionsRouter.post("/", (req, res) => {
   res.status(201).json(interviewQuestionsService.create(req.body));
 });
 
-interviewQuestionsRouter.post("/:id/move", (req, res) => {
-  const { direction } = req.body as { direction?: "up" | "down" };
-  if (direction !== "up" && direction !== "down") {
-    return res.status(400).json({ error: "direction ('up' or 'down') is required" });
-  }
-  const reordered = interviewQuestionsService.move(req.params.id, direction);
-  if (!reordered) return res.status(404).json({ error: "InterviewQuestion not found" });
-  res.json(reordered);
-});
-
 interviewQuestionsRouter.patch("/:id", (req, res) => {
   const updated = interviewQuestionsService.update(req.params.id, req.body);
   if (!updated) return res.status(404).json({ error: "InterviewQuestion not found" });

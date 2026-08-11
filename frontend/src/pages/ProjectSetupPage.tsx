@@ -399,6 +399,8 @@ function IQGroupedList({
   interviewQuestions: InterviewQuestion[];
   onChanged: () => void;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   return (
     <div className="space-y-5">
       {researchQuestions.map((rq) => {
@@ -410,58 +412,179 @@ function IQGroupedList({
               <p className="text-sm text-muted-foreground">No Interview Questions yet under this RQ.</p>
             ) : (
               <ul className="divide-y rounded-md border">
-                {iqs.map((iq) => {
-                  const metadata: [string, string][] = [
-                    ["Description", iq.description ?? ""],
-                    ["Smallest component", iq.smallest_component ?? ""],
-                    ["Selection criterion", iq.selection_criterion_definition ?? ""],
-                    ["Level of abstraction", iq.level_of_abstraction ?? ""],
-                  ].filter(([, value]) => value) as [string, string][];
-
-                  return (
-                    <li key={iq.id} className="space-y-2 p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
-                          <dt className="text-muted-foreground">Label:</dt>
-                          <dd className="font-medium">{iq.label}</dd>
-                          <dt className="text-muted-foreground">Interview question:</dt>
-                          <dd>{iq.text}</dd>
-                        </dl>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="shrink-0 text-destructive hover:text-destructive"
-                          onClick={async () => {
-                            try {
-                              await interviewQuestionsApi.remove(iq.id);
-                              onChanged();
-                            } catch (err) {
-                              window.alert((err as Error).message);
-                            }
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      {metadata.length > 0 && (
-                        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 border-t pt-2 text-xs">
-                          {metadata.map(([key, value]) => (
-                            <div key={key} className="contents">
-                              <dt className="text-muted-foreground">{key}:</dt>
-                              <dd>{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      )}
+                {iqs.map((iq) =>
+                  editingId === iq.id ? (
+                    <li key={iq.id} className="p-4">
+                      <EditIQForm
+                        iq={iq}
+                        researchQuestions={researchQuestions}
+                        onSaved={() => {
+                          setEditingId(null);
+                          onChanged();
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
                     </li>
-                  );
-                })}
+                  ) : (
+                    <IQRow key={iq.id} iq={iq} onEdit={() => setEditingId(iq.id)} onChanged={onChanged} />
+                  )
+                )}
               </ul>
             )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+function IQRow({ iq, onEdit, onChanged }: { iq: InterviewQuestion; onEdit: () => void; onChanged: () => void }) {
+  const metadata: [string, string][] = [
+    ["Description", iq.description ?? ""],
+    ["Smallest component", iq.smallest_component ?? ""],
+    ["Selection criterion", iq.selection_criterion_definition ?? ""],
+    ["Level of abstraction", iq.level_of_abstraction ?? ""],
+    ["Display order", String(iq.sort_order)],
+  ].filter(([, value]) => value) as [string, string][];
+
+  return (
+    <li className="space-y-2 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+          <dt className="text-muted-foreground">Label:</dt>
+          <dd className="font-medium">{iq.label}</dd>
+          <dt className="text-muted-foreground">Interview question:</dt>
+          <dd>{iq.text}</dd>
+        </dl>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="ghost" size="sm" onClick={onEdit}>
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={async () => {
+              try {
+                await interviewQuestionsApi.remove(iq.id);
+                onChanged();
+              } catch (err) {
+                window.alert((err as Error).message);
+              }
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      </div>
+      {metadata.length > 0 && (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 border-t pt-2 text-xs">
+          {metadata.map(([key, value]) => (
+            <div key={key} className="contents">
+              <dt className="text-muted-foreground">{key}:</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </li>
+  );
+}
+
+function EditIQForm({
+  iq,
+  researchQuestions,
+  onSaved,
+  onCancel,
+}: {
+  iq: InterviewQuestion;
+  researchQuestions: ResearchQuestion[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [researchQuestionId, setResearchQuestionId] = useState(iq.research_question_id);
+  const [label, setLabel] = useState(iq.label);
+  const [text, setText] = useState(iq.text);
+  const [description, setDescription] = useState(iq.description ?? "");
+  const [smallestComponent, setSmallestComponent] = useState(iq.smallest_component ?? "");
+  const [selectionCriterion, setSelectionCriterion] = useState(iq.selection_criterion_definition ?? "");
+  const [levelOfAbstraction, setLevelOfAbstraction] = useState(iq.level_of_abstraction ?? "");
+  const [sortOrder, setSortOrder] = useState(String(iq.sort_order));
+
+  const canSubmit = Boolean(researchQuestionId && label.trim() && text.trim());
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    try {
+      await interviewQuestionsApi.update(iq.id, {
+        research_question_id: researchQuestionId,
+        label: label.trim(),
+        text: text.trim(),
+        description: description.trim() || null,
+        smallest_component: smallestComponent.trim() || null,
+        selection_criterion_definition: selectionCriterion.trim() || null,
+        level_of_abstraction: levelOfAbstraction.trim() || null,
+        sort_order: sortOrder.trim() === "" || Number.isNaN(Number(sortOrder)) ? iq.sort_order : Number(sortOrder),
+      });
+      onSaved();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }
+
+  return (
+    <form className="space-y-3 rounded-md border p-3" onSubmit={handleSubmit}>
+      <div className="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-2">
+        <Label className="text-xs text-muted-foreground">Research question:</Label>
+        <Select value={researchQuestionId} onValueChange={setResearchQuestionId}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {researchQuestions.map((rq) => (
+              <SelectItem key={rq.id} value={rq.id}>
+                {rq.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Label className="text-xs text-muted-foreground">Label:</Label>
+        <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+
+        <Label className="text-xs text-muted-foreground">Interview question:</Label>
+        <Input value={text} onChange={(e) => setText(e.target.value)} />
+
+        <Label className="text-xs text-muted-foreground">Display order:</Label>
+        <Input
+          type="number"
+          className="w-24"
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-2 rounded-md border p-3">
+        <Label className="text-xs text-muted-foreground">Description:</Label>
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Label className="text-xs text-muted-foreground">Smallest component:</Label>
+        <Input value={smallestComponent} onChange={(e) => setSmallestComponent(e.target.value)} />
+        <Label className="text-xs text-muted-foreground">Selection criterion:</Label>
+        <Input value={selectionCriterion} onChange={(e) => setSelectionCriterion(e.target.value)} />
+        <Label className="text-xs text-muted-foreground">Level of abstraction:</Label>
+        <Input value={levelOfAbstraction} onChange={(e) => setLevelOfAbstraction(e.target.value)} />
+      </div>
+
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={!canSubmit}>
+          Save
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -4,7 +4,7 @@ import { InterviewQuestion } from "../models/types";
 import { affinityNodesService } from "./affinityNodesService";
 
 export const interviewQuestionsService = {
-  /** User-orderable — see move(). */
+  /** Ordered by sort_order — editable per-IQ via update() on the Project Setup page. */
   listByProject(projectId: string): InterviewQuestion[] {
     return db
       .prepare("SELECT * FROM interview_questions WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC")
@@ -65,12 +65,14 @@ export const interviewQuestionsService = {
     updates: Partial<
       Pick<
         InterviewQuestion,
+        | "research_question_id"
         | "label"
         | "text"
         | "description"
         | "smallest_component"
         | "selection_criterion_definition"
         | "level_of_abstraction"
+        | "sort_order"
       >
     >
   ): InterviewQuestion | undefined {
@@ -78,10 +80,10 @@ export const interviewQuestionsService = {
     if (!existing) return undefined;
     const updated = { ...existing, ...updates };
     db.prepare(
-      `UPDATE interview_questions SET label = @label, text = @text, description = @description,
-       smallest_component = @smallest_component,
+      `UPDATE interview_questions SET research_question_id = @research_question_id, label = @label, text = @text,
+       description = @description, smallest_component = @smallest_component,
        selection_criterion_definition = @selection_criterion_definition,
-       level_of_abstraction = @level_of_abstraction WHERE id = @id`
+       level_of_abstraction = @level_of_abstraction, sort_order = @sort_order WHERE id = @id`
     ).run(updated);
     return updated;
   },
@@ -89,26 +91,5 @@ export const interviewQuestionsService = {
   remove(id: string): void {
     db.prepare("DELETE FROM interview_questions WHERE id = ?").run(id);
     affinityNodesService.removeByRef("iq_board", id);
-  },
-
-  /** Swaps this Interview Question's position with the one directly above/below it, within its
-   *  own Project's list — mirrors projectsService.move(). Returns the Project's freshly-ordered
-   *  list, or undefined if the id doesn't exist. */
-  move(id: string, direction: "up" | "down"): InterviewQuestion[] | undefined {
-    const target = this.get(id);
-    if (!target) return undefined;
-
-    const ordered = this.listByProject(target.project_id);
-    const index = ordered.findIndex((iq) => iq.id === id);
-    const neighborIndex = direction === "up" ? index - 1 : index + 1;
-    if (neighborIndex < 0 || neighborIndex >= ordered.length) return ordered;
-
-    const current = ordered[index];
-    const neighbor = ordered[neighborIndex];
-    db.transaction(() => {
-      db.prepare("UPDATE interview_questions SET sort_order = ? WHERE id = ?").run(neighbor.sort_order, current.id);
-      db.prepare("UPDATE interview_questions SET sort_order = ? WHERE id = ?").run(current.sort_order, neighbor.id);
-    })();
-    return this.listByProject(target.project_id);
   },
 };

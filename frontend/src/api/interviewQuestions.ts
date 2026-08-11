@@ -11,6 +11,4 @@ export const interviewQuestionsApi = {
   update: (id: string, updates: Partial<InterviewQuestion>) =>
     apiClient.patch<InterviewQuestion>(`/interview-questions/${id}`, updates),
   remove: (id: string) => apiClient.delete<void>(`/interview-questions/${id}`),
-  move: (id: string, direction: "up" | "down") =>
-    apiClient.post<InterviewQuestion[]>(`/interview-questions/${id}/move`, { direction }),
 };

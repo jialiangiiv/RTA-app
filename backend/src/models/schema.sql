@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS interview_questions (
   smallest_component TEXT,
   selection_criterion_definition TEXT,
   level_of_abstraction TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS transcripts (

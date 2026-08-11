@@ -58,7 +58,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
   const { width: leftWidth, startDrag: startLeftDrag } = useResizableWidth(280, 200, 480, "right");
   const { width: rightWidth, startDrag: startRightDrag } = useResizableWidth(340, 260, 560, "left");
 
-  const { interviewQuestions } = useInterviewQuestions(projectId);
+  const { interviewQuestions, refresh: refreshInterviewQuestions } = useInterviewQuestions(projectId);
   const { transcript: activeTranscript } = useActiveTranscript(activeTranscriptId);
   const { codedExcerpts, refresh: refreshCodedExcerpts } = useCodedExcerpts(activeTranscriptId);
   const { codeIds: iqCodeIds, refresh: refreshIqCodeIds } = useCodeIdsForInterviewQuestion(activeInterviewQuestionId);
@@ -234,6 +234,7 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
                   interviewQuestions={interviewQuestions}
                   activeInterviewQuestionId={activeInterviewQuestionId}
                   onActiveInterviewQuestionChange={selectInterviewQuestion}
+                  onReordered={refreshInterviewQuestions}
                 />
               </TabsContent>
             </Tabs>

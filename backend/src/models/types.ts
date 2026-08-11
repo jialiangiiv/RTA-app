@@ -47,6 +47,7 @@ export interface InterviewQuestion {
   selection_criterion_definition: string | null;
   level_of_abstraction: string | null;
   created_at: string;
+  sort_order: number;
 }
 
 export interface Transcript {

@@ -57,6 +57,21 @@ function migrate() {
       ) WHERE active_codebook_id IS NULL
     `);
   }
+  const addedIqSortOrder = !((db.prepare("PRAGMA table_info(interview_questions)").all() as { name: string }[]).some(
+    (col) => col.name === "sort_order"
+  ));
+  addColumnIfMissing("interview_questions", "sort_order", "INTEGER NOT NULL DEFAULT 0");
+  if (addedIqSortOrder) {
+    // Backfill so pre-existing rows keep their prior (created_at) order instead of collapsing to
+    // 0 — scoped per-project, since each Project's Interview Questions are reordered independently.
+    db.exec(`
+      UPDATE interview_questions SET sort_order = (
+        SELECT COUNT(*) FROM interview_questions iq2
+        WHERE iq2.project_id = interview_questions.project_id AND iq2.created_at < interview_questions.created_at
+      )
+    `);
+  }
+
   // One-time cleanup for the Affinity Map's 'rq_lane'/'unsorted' node types, replaced by
   // 'iq_board'/'not_yet_coded'. Guarded on legacy rows actually existing so this only ever fires
   // once per DB — otherwise it would wipe 'code' nodes (and every user-dragged position) on EVERY

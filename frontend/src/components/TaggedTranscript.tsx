@@ -1,4 +1,6 @@
 import { ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { ArrowDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export interface TranscriptTag {
   key: string;
@@ -29,6 +31,10 @@ interface TaggedTranscriptProps {
 
 const TAG_MIN_HEIGHT = 30;
 const TAG_GAP = 4;
+/** Grace period between leaving a tag/card and actually closing it — without this, moving the
+ *  mouse from the tag toward a button on the card (crossing the `mt-1` gap between them) closes
+ *  the card before the click lands. Mirrors TranscriptView's HighlightHoverCard timing. */
+const HOVER_CLOSE_DELAY = 150;
 
 /** Long code names shrink first; unlike the Codes tab/select-popover lists, margin tags wrap
  *  onto more lines (via break-words, no truncate) rather than losing text to an ellipsis — there's
@@ -98,6 +104,24 @@ export function TaggedTranscript({
   const [leftPositions, setLeftPositions] = useState<Record<string, number>>({});
   const [rightPositions, setRightPositions] = useState<Record<string, number>>({});
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const hoverCloseTimeout = useRef<number | null>(null);
+
+  function cancelHoverClose() {
+    if (hoverCloseTimeout.current !== null) {
+      window.clearTimeout(hoverCloseTimeout.current);
+      hoverCloseTimeout.current = null;
+    }
+  }
+
+  function scheduleHoverClose() {
+    cancelHoverClose();
+    hoverCloseTimeout.current = window.setTimeout(() => setHoveredKey(null), HOVER_CLOSE_DELAY);
+  }
+
+  function openHover(key: string) {
+    cancelHoverClose();
+    setHoveredKey(key);
+  }
 
   useLayoutEffect(() => {
     function recompute() {
@@ -130,6 +154,22 @@ export function TaggedTranscript({
 
   const hovered = [...leftTags, ...rightTags].find((t) => t.key === hoveredKey) ?? null;
 
+  // Document order across BOTH columns, so "next" walks the transcript top-to-bottom regardless
+  // of which side a highlight is on, rather than exhausting one column before the other.
+  const orderedTags = [
+    ...leftTags.map((tag) => ({ tag, side: "left" as const })),
+    ...rightTags.map((tag) => ({ tag, side: "right" as const })),
+  ].sort((a, b) => a.tag.start_offset - b.tag.start_offset);
+  const currentIndex = orderedTags.findIndex(({ tag }) => tag.key === hoveredKey);
+
+  function goToNextHighlight() {
+    if (orderedTags.length === 0) return;
+    const next = orderedTags[(currentIndex + 1) % orderedTags.length];
+    openHover(next.tag.key);
+    const buttonRefs = next.side === "left" ? leftButtonRefs.current : rightButtonRefs.current;
+    buttonRefs[next.tag.key]?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   function renderColumn(
     tags: TranscriptTag[],
     positions: Record<string, number>,
@@ -144,8 +184,8 @@ export function TaggedTranscript({
             key={tag.key}
             className="absolute left-0 right-0"
             style={{ top: positions[tag.key] ?? 0 }}
-            onMouseEnter={() => setHoveredKey(tag.key)}
-            onMouseLeave={() => setHoveredKey(null)}
+            onMouseEnter={() => openHover(tag.key)}
+            onMouseLeave={scheduleHoverClose}
           >
             <button
               ref={(el) => {
@@ -160,7 +200,11 @@ export function TaggedTranscript({
               {tag.label}
             </button>
             {hoveredKey === tag.key && (
-              <div className="absolute left-0 top-full z-20 mt-1 w-64 space-y-2 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg">
+              <div
+                className="absolute left-0 top-full z-20 mt-1 w-64 space-y-2 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
+                onMouseEnter={cancelHoverClose}
+                onMouseLeave={scheduleHoverClose}
+              >
                 <p className="text-sm font-semibold">{tag.label}</p>
                 <p className="text-xs text-muted-foreground">{tag.definition || "No definition."}</p>
                 {tag.iqLabel && <p className="text-[11px] text-muted-foreground">IQ: {tag.iqLabel}</p>}
@@ -175,6 +219,24 @@ export function TaggedTranscript({
 
   return (
     <div className="relative flex gap-4">
+      {orderedTags.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full border bg-popover px-3 py-2 text-popover-foreground shadow-lg">
+          <span className="text-xs text-muted-foreground">
+            {currentIndex + 1}/{orderedTags.length} highlight{orderedTags.length === 1 ? "" : "s"}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            title="Jump to next highlight (left or right)"
+            onClick={goToNextHighlight}
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       {renderColumn(leftTags, leftPositions, leftButtonRefs.current, leftTagClassName, renderLeftActions)}
 
       <div ref={containerRef} className="min-w-0 flex-1 [white-space:pre-wrap]">

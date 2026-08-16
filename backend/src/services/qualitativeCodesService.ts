@@ -56,12 +56,14 @@ export const qualitativeCodesService = {
     color?: string | null;
   }): QualitativeCode {
     const interviewQuestionId = input.interview_question_id ?? null;
-    assertUniqueLabel(input.codebook_id, input.label);
+    const label = input.label.trim();
+    if (!label) throw new Error("Code name cannot be empty.");
+    assertUniqueLabel(input.codebook_id, label);
     const qCode: QualitativeCode = {
       id: newId(),
       codebook_id: input.codebook_id,
       interview_question_id: interviewQuestionId,
-      label: input.label,
+      label,
       description: input.description,
       theme: input.theme ?? null,
       example_quote: input.example_quote ?? null,
@@ -109,10 +111,15 @@ export const qualitativeCodesService = {
   ): QualitativeCode | undefined {
     const existing = this.get(id);
     if (!existing) return undefined;
-    const updated = { ...existing, ...updates };
-    if (updates.label && updates.label.trim().toLowerCase() !== existing.label.trim().toLowerCase()) {
-      assertUniqueLabel(existing.codebook_id, updated.label, id);
+    if (updates.label !== undefined) {
+      const trimmedLabel = updates.label.trim();
+      if (!trimmedLabel) throw new Error("Code name cannot be empty.");
+      updates = { ...updates, label: trimmedLabel };
+      if (trimmedLabel.toLowerCase() !== existing.label.trim().toLowerCase()) {
+        assertUniqueLabel(existing.codebook_id, trimmedLabel, id);
+      }
     }
+    const updated = { ...existing, ...updates };
     db.prepare(
       `UPDATE qualitative_codes SET interview_question_id = @interview_question_id, label = @label,
        description = @description, theme = @theme, example_quote = @example_quote, color = @color WHERE id = @id`

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Home } from "lucide-react";
 import { projectsApi } from "../api/projects";
 import { researchQuestionsApi } from "../api/researchQuestions";
 import { qualitativeCodesApi } from "../api/codebooks";
+import { comparisonSessionsApi, ComparisonSessionRecord } from "../api/comparisonSessions";
 import { useInterviewQuestions } from "../hooks/useInterviewQuestions";
 import { useCodedExcerpts } from "../hooks/useCodedExcerpts";
 import { useCodeIdsForInterviewQuestion } from "../hooks/useCodeIdsForInterviewQuestion";
@@ -88,6 +89,15 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
     projectsApi.get(projectId).then(setProject);
   }
   useEffect(refreshProject, [projectId]);
+
+  // Lets the Compare button say "continuing from [date]" for a saved-but-unfinished comparison,
+  // without the user having to click in to find out. Re-checked on every exit from Compare (Save
+  // Draft & Exit creates/updates the saved session; a successful Finish deletes it).
+  const [savedComparisonSession, setSavedComparisonSession] = useState<ComparisonSessionRecord | null>(null);
+  function refreshComparisonSession() {
+    comparisonSessionsApi.get(projectId).then(setSavedComparisonSession);
+  }
+  useEffect(refreshComparisonSession, [projectId]);
 
   // A Project with no RQs yet hasn't been through setup — send it there instead of an empty
   // workspace. Not a permanent gate: once RQs exist, this Project always opens straight here.
@@ -186,7 +196,12 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
           </Button>
           {activeTranscript && centerMode === "coding" && (
             <Button variant="outline" size="sm" onClick={() => setCenterMode("comparison")}>
-              Compare
+              {savedComparisonSession
+                ? `Compare: continuing from ${new Date(savedComparisonSession.updated_at).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}`
+                : "Compare"}
             </Button>
           )}
         </div>
@@ -257,7 +272,10 @@ export function ProjectWorkspace({ currentUser }: ProjectWorkspaceProps) {
               activeInterviewQuestionId={activeInterviewQuestionId}
               activeInterviewQuestionLabel={activeInterviewQuestionLabel}
               interviewQuestionLabelById={interviewQuestionLabelById}
-              onExit={() => setCenterMode("coding")}
+              onExit={() => {
+                setCenterMode("coding");
+                refreshComparisonSession();
+              }}
               onFinished={() => {
                 refreshProject();
                 refreshCodebooks();

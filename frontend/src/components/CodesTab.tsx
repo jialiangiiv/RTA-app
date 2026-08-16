@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Search, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, X, Trash2 } from "lucide-react";
 import { codebooksApi, qualitativeCodesApi } from "../api/codebooks";
 import { codebookVersionsApi } from "../api/codebookVersions";
 import { Codebook, CodedExcerpt, Project, QualitativeCode, TranscriptSummary } from "../types/domain";
@@ -157,6 +157,17 @@ export function CodesTab({
     }
   }
 
+  async function deleteCode(qc: QualitativeCode) {
+    const name = qc.label.trim() || "(unnamed code)";
+    if (!window.confirm(`Delete "${name}"? Its highlights will be deleted too.`)) return;
+    try {
+      await qualitativeCodesApi.remove(qc.id);
+      onCodesChanged();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }
+
   return (
     <div className="space-y-5 pt-4">
       {versions.length > 0 && (
@@ -238,7 +249,7 @@ export function CodesTab({
                         />
                       </div>
                       <div className="flex gap-2">
-                        <Button type="submit" size="sm">
+                        <Button type="submit" size="sm" disabled={!editLabel.trim()}>
                           Save
                         </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(null)}>
@@ -291,6 +302,15 @@ export function CodesTab({
                         onClick={() => startSearch(qc.id)}
                       >
                         <Search className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                        title="Delete this code"
+                        onClick={() => deleteCode(qc)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                     {searchingCodeId === qc.id &&

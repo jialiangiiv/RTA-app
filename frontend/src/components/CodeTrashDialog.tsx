@@ -12,8 +12,8 @@ interface CodeTrashDialogProps {
   onRestored: () => void;
 }
 
-/** Lists whole codes deleted via Compare's "Delete code" action (soft-deleted, not yet purged) so
- *  they can be restored — or, if truly unwanted, permanently deleted. */
+/** Lists whole codes deleted via the Codes tab's or Compare's "Delete"/"Delete code" action
+ *  (soft-deleted, not yet purged) so they can be restored — or, if truly unwanted, permanently deleted. */
 export function CodeTrashDialog({ codebookId, open, onOpenChange, onRestored }: CodeTrashDialogProps) {
   const [trashed, setTrashed] = useState<QualitativeCode[]>([]);
   const [loading, setLoading] = useState(false);

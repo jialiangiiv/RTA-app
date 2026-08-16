@@ -99,7 +99,14 @@ export const codebooksService = {
     });
 
     const codeIdMap = new Map<string, string>();
+    const seenLabels = new Set<string>();
     for (const code of qualitativeCodesService.listByCodebook(source.id)) {
+      const key = code.label.trim().toLowerCase();
+      // Guards against pre-existing corrupt data (blank or duplicate labels, e.g. left over from a
+      // since-fixed validation gap) — cloning must never abort a whole Finish over one stray junk
+      // code, so skip it instead of letting create()'s uniqueness check throw.
+      if (!key || seenLabels.has(key)) continue;
+      seenLabels.add(key);
       const newCode = qualitativeCodesService.create({
         codebook_id: cloned.id,
         interview_question_id: code.interview_question_id,

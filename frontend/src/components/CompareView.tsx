@@ -39,9 +39,9 @@ type Phase =
   | { kind: "import-summary"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "comparing"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "finish-prompt"; bundle: CodebookShareBundle; ownerName: string }
-  | { kind: "finishing" }
+  | { kind: "finishing"; bundle: CodebookShareBundle; ownerName: string }
   | { kind: "done"; result: FinishResult }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; bundle: CodebookShareBundle; ownerName: string };
 
 function keyOf(codeName: string): string {
   return codeName.trim().toLowerCase();
@@ -200,18 +200,22 @@ export function CompareView({
     setEditTarget(null);
   }
 
+  async function persistSession(bundle: CodebookShareBundle) {
+    await comparisonSessionsApi.save({
+      project_id: projectId,
+      owner_name: ownerName,
+      bundle,
+      accepted_code_names: Array.from(acceptedCodeNames),
+      edited_by_code_name: editedByCodeName,
+      excluded_code_names: Array.from(excludedCodeNames),
+      excluded_right_keys: Array.from(excludedRightKeys),
+    });
+  }
+
   async function saveSession() {
     if (!bundle) return;
     try {
-      await comparisonSessionsApi.save({
-        project_id: projectId,
-        owner_name: ownerName,
-        bundle,
-        accepted_code_names: Array.from(acceptedCodeNames),
-        edited_by_code_name: editedByCodeName,
-        excluded_code_names: Array.from(excludedCodeNames),
-        excluded_right_keys: Array.from(excludedRightKeys),
-      });
+      await persistSession(bundle);
       onExit();
     } catch (err) {
       window.alert((err as Error).message);
@@ -220,8 +224,11 @@ export function CompareView({
 
   async function submitFinish(bundle: CodebookShareBundle) {
     if (!finishVersionLabel.trim()) return;
-    setPhase({ kind: "finishing" });
+    setPhase({ kind: "finishing", bundle, ownerName });
     try {
+      // Checkpoint before the risky call: if the merge fails server-side, this comparison stays
+      // resumable (via "Save & Exit"'s own restore-on-mount effect) instead of being unrecoverable.
+      await persistSession(bundle);
       const accepted: AcceptedCode[] = bundle.codes
         .filter((c) => acceptedCodeNames.has(keyOf(c.code_name)) && !excludedCodeNames.has(keyOf(c.code_name)))
         .map((c) => {
@@ -250,7 +257,7 @@ export function CompareView({
       setPhase({ kind: "done", result });
       onFinished();
     } catch (err) {
-      setPhase({ kind: "error", message: (err as Error).message });
+      setPhase({ kind: "error", message: (err as Error).message, bundle, ownerName });
     }
   }
 
@@ -284,10 +291,19 @@ export function CompareView({
   );
 
   const comparing =
-    phase.kind === "comparing" || phase.kind === "finish-prompt" || phase.kind === "finishing" || phase.kind === "done";
+    phase.kind === "comparing" ||
+    phase.kind === "finish-prompt" ||
+    phase.kind === "finishing" ||
+    phase.kind === "done" ||
+    phase.kind === "error";
   const bundle =
-    phase.kind === "comparing" || phase.kind === "finish-prompt" ? phase.bundle : null;
-  const ownerName = phase.kind === "comparing" || phase.kind === "finish-prompt" ? phase.ownerName : "";
+    phase.kind === "comparing" || phase.kind === "finish-prompt" || phase.kind === "finishing" || phase.kind === "error"
+      ? phase.bundle
+      : null;
+  const ownerName =
+    phase.kind === "comparing" || phase.kind === "finish-prompt" || phase.kind === "finishing" || phase.kind === "error"
+      ? phase.ownerName
+      : "";
 
   const rightTags: TranscriptTag[] = useMemo(() => {
     if (!bundle) return [];
@@ -344,15 +360,6 @@ export function CompareView({
         <div className="flex items-center justify-between rounded-md border bg-card p-3">
           <div>
             <p className="text-sm font-medium">Comparing with {ownerName}</p>
-            <p className="text-xs text-muted-foreground">
-              Left: your codes. Right: hover a tag to preview, then accept the ones you want — accepted tags move to
-              the left in green.{" "}
-              {showAllCodes
-                ? "Showing all codes."
-                : activeInterviewQuestionLabel
-                  ? `Filtered to "${activeInterviewQuestionLabel}".`
-                  : ""}
-            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => setShowAllCodes((v) => !v)}>
@@ -361,10 +368,24 @@ export function CompareView({
             <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
               Trash
             </Button>
-            <Button variant="ghost" size="sm" onClick={saveSession}>
-              Save &amp; Exit
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Saves your progress as a resumable draft and exits. Doesn't merge any codes yet."
+              onClick={saveSession}
+            >
+              Save Draft &amp; Exit
             </Button>
-            <Button variant="ghost" size="sm" onClick={onExit}>
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Discards your accept/reject choices without saving them."
+              onClick={() => {
+                if (window.confirm("Discard your progress in this comparison? Use \"Save Draft & Exit\" instead if you want to keep it.")) {
+                  onExit();
+                }
+              }}
+            >
               Cancel
             </Button>
             <Button size="sm" onClick={() => bundle && setPhase({ kind: "finish-prompt", bundle, ownerName })}>
@@ -631,11 +652,13 @@ export function CompareView({
             <>
               <DialogHeader>
                 <DialogTitle>Something went wrong</DialogTitle>
-                <DialogDescription className="text-destructive">{phase.message}</DialogDescription>
+                <DialogDescription className="text-destructive">
+                  {phase.message} Your progress has been saved — you can fix the issue and try Finish again.
+                </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button size="sm" onClick={onExit}>
-                  Close
+                <Button size="sm" onClick={() => bundle && setPhase({ kind: "comparing", bundle, ownerName })}>
+                  Back to comparing
                 </Button>
               </DialogFooter>
             </>
@@ -668,7 +691,7 @@ export function CompareView({
             <Button variant="outline" size="sm" onClick={() => setEditTarget(null)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={saveEdit}>
+            <Button size="sm" disabled={!editTarget?.label.trim()} onClick={saveEdit}>
               Save
             </Button>
           </DialogFooter>

@@ -47,6 +47,31 @@ function keyOf(codeName: string): string {
   return codeName.trim().toLowerCase();
 }
 
+/** Stable per-occurrence identity for one imported highlight — independent of array index or
+ *  which transcript happens to be active, so accept/reject state (and the "delete this highlight"
+ *  dismissal set) never collides across transcripts or shifts when the list re-filters. */
+function excerptKey(e: { code_name: string; transcript_file_name: string; start_offset: number; end_offset: number }): string {
+  return `right-${keyOf(e.code_name)}|${e.transcript_file_name}|${e.start_offset}|${e.end_offset}`;
+}
+
+/** Sessions saved before Accept/Reject became per-highlight recorded a plain `keyOf(code_name)`
+ *  per accepted CODE. Restoring one of those verbatim into the new per-excerpt keying would match
+ *  nothing (silently unaccepting everything) — expand each legacy entry into every excerpt that
+ *  code currently has, matching what "accepted" used to mean. */
+function migrateAcceptedKeys(rawKeys: string[], bundle: CodebookShareBundle): Set<string> {
+  const migrated = new Set<string>();
+  for (const raw of rawKeys) {
+    if (raw.startsWith("right-") && raw.includes("|")) {
+      migrated.add(raw);
+      continue;
+    }
+    for (const e of bundle.coded_excerpts) {
+      if (keyOf(e.code_name) === raw) migrated.add(excerptKey(e));
+    }
+  }
+  return migrated;
+}
+
 export function CompareView({
   projectId,
   currentUserDisplayName,
@@ -69,7 +94,11 @@ export function CompareView({
   const [importError, setImportError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [acceptedCodeNames, setAcceptedCodeNames] = useState<Set<string>>(new Set());
+  // Accept/reject is per HIGHLIGHT (one specific occurrence), not per code — a code can be
+  // legitimately accepted for one quote and rejected for another. Keyed by excerptKey(). Persisted
+  // under the same "accepted_code_names" wire field as before (the backend treats it as an opaque
+  // string array, so no schema change was needed) — it just holds excerpt keys now, not code names.
+  const [acceptedExcerptKeys, setAcceptedExcerptKeys] = useState<Set<string>>(new Set());
   const [editedByCodeName, setEditedByCodeName] = useState<Record<string, { label: string; definition: string }>>({});
   // Session-only: right-margin (imported, not-yet-persisted) codes/occurrences the user has
   // dismissed. Never touches the backend — there's nothing in the DB to soft-delete pre-accept.
@@ -88,7 +117,7 @@ export function CompareView({
     comparisonSessionsApi.get(projectId).then((session) => {
       if (cancelled) return;
       if (session) {
-        setAcceptedCodeNames(new Set(session.accepted_code_names));
+        setAcceptedExcerptKeys(migrateAcceptedKeys(session.accepted_code_names, session.bundle));
         setEditedByCodeName(session.edited_by_code_name);
         setExcludedCodeNames(new Set(session.excluded_code_names));
         setExcludedRightKeys(new Set(session.excluded_right_keys));
@@ -148,27 +177,34 @@ export function CompareView({
     }
   }
 
-  function toggleAccept(codeKey: string) {
-    setAcceptedCodeNames((prev) => {
+  function toggleAccept(excerptTagKey: string) {
+    setAcceptedExcerptKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(codeKey)) next.delete(codeKey);
-      else next.add(codeKey);
+      if (next.has(excerptTagKey)) next.delete(excerptTagKey);
+      else next.add(excerptTagKey);
       return next;
     });
   }
 
   function excludeRightHighlight(tagKey: string) {
     setExcludedRightKeys((prev) => new Set(prev).add(tagKey));
+    // A dismissed highlight is never merged, even if it was accepted first — don't leave it as a
+    // stale "accepted" entry once it's no longer shown anywhere.
+    setAcceptedExcerptKeys((prev) => {
+      if (!prev.has(tagKey)) return prev;
+      const next = new Set(prev);
+      next.delete(tagKey);
+      return next;
+    });
   }
 
   function excludeRightCode(codeKey: string) {
     if (!window.confirm("Exclude this imported code (and all of its proposed highlights) from this comparison?")) return;
     setExcludedCodeNames((prev) => new Set(prev).add(codeKey));
-    setAcceptedCodeNames((prev) => {
-      if (!prev.has(codeKey)) return prev;
-      const next = new Set(prev);
-      next.delete(codeKey);
-      return next;
+    setAcceptedExcerptKeys((prev) => {
+      const codePrefix = `right-${codeKey}|`;
+      const next = new Set([...prev].filter((k) => !k.startsWith(codePrefix)));
+      return next.size === prev.size ? prev : next;
     });
     setEditedByCodeName((prev) => {
       if (!(codeKey in prev)) return prev;
@@ -205,7 +241,7 @@ export function CompareView({
       project_id: projectId,
       owner_name: ownerName,
       bundle,
-      accepted_code_names: Array.from(acceptedCodeNames),
+      accepted_code_names: Array.from(acceptedExcerptKeys),
       edited_by_code_name: editedByCodeName,
       excluded_code_names: Array.from(excludedCodeNames),
       excluded_right_keys: Array.from(excludedRightKeys),
@@ -229,25 +265,22 @@ export function CompareView({
       // Checkpoint before the risky call: if the merge fails server-side, this comparison stays
       // resumable (via "Save & Exit"'s own restore-on-mount effect) instead of being unrecoverable.
       await persistSession(bundle);
-      const accepted: AcceptedCode[] = bundle.codes
-        .filter((c) => acceptedCodeNames.has(keyOf(c.code_name)) && !excludedCodeNames.has(keyOf(c.code_name)))
-        .map((c) => {
-          const key = keyOf(c.code_name);
-          const edited = editedByCodeName[key];
-          return {
-            code_name: edited?.label ?? c.code_name,
-            code_definition: edited?.definition ?? c.code_definition,
-            iq_label: c.iq_label,
-            iq_text: c.iq_text,
-            coded_excerpts: bundle.coded_excerpts
-              .filter((e) => keyOf(e.code_name) === key)
-              .map((e) => ({
-                transcript_file_name: e.transcript_file_name,
-                start_offset: e.start_offset,
-                end_offset: e.end_offset,
-              })),
-          };
-        });
+      // acceptedByCode already holds exactly the accepted highlights, grouped by code — so this is
+      // just a reshape into the wire format, not a re-filter.
+      const accepted: AcceptedCode[] = Array.from(acceptedByCode.entries()).map(([key, { code, excerpts }]) => {
+        const edited = editedByCodeName[key];
+        return {
+          code_name: edited?.label ?? code.code_name,
+          code_definition: edited?.definition ?? code.code_definition,
+          iq_label: code.iq_label,
+          iq_text: code.iq_text,
+          coded_excerpts: excerpts.map((e) => ({
+            transcript_file_name: e.transcript_file_name,
+            start_offset: e.start_offset,
+            end_offset: e.end_offset,
+          })),
+        };
+      });
 
       const result = await codebookVersionsApi.finish(projectId, {
         version_label: finishVersionLabel.trim(),
@@ -305,22 +338,45 @@ export function CompareView({
       ? phase.ownerName
       : "";
 
+  // Shared by rightTags (below) and acceptedByCode — both need "which bundle code does this
+  // excerpt belong to" and there's no reason to rebuild that map twice.
+  const bundleCodesByName = useMemo(
+    () => new Map((bundle?.codes ?? []).map((c) => [keyOf(c.code_name), c])),
+    [bundle]
+  );
+
+  // The accepted highlights (not whole codes — see toggleAccept), grouped back by code for the
+  // Finish payload and for the "N codes / M highlights accepted" summary below.
+  const acceptedByCode = useMemo(() => {
+    const grouped = new Map<string, { code: CodebookShareBundle["codes"][number]; excerpts: CodebookShareBundle["coded_excerpts"] }>();
+    for (const e of bundle?.coded_excerpts ?? []) {
+      if (!acceptedExcerptKeys.has(excerptKey(e))) continue;
+      const key = keyOf(e.code_name);
+      const code = bundleCodesByName.get(key);
+      if (!code) continue;
+      if (!grouped.has(key)) grouped.set(key, { code, excerpts: [] });
+      grouped.get(key)!.excerpts.push(e);
+    }
+    return grouped;
+  }, [bundle, bundleCodesByName, acceptedExcerptKeys]);
+  const acceptedHighlightCount = Array.from(acceptedByCode.values()).reduce((sum, v) => sum + v.excerpts.length, 0);
+
   const rightTags: TranscriptTag[] = useMemo(() => {
     if (!bundle) return [];
-    const codesByName = new Map(bundle.codes.map((c) => [keyOf(c.code_name), c]));
     return bundle.coded_excerpts
       .filter((e) => e.transcript_file_name === activeTranscript.file_name)
-      .map((e, i) => {
+      .map((e) => {
         const key = keyOf(e.code_name);
-        const info = codesByName.get(key);
+        const tagKey = excerptKey(e);
+        const info = bundleCodesByName.get(key);
         const edited = editedByCodeName[key];
         return {
-          key: `right-${i}-${e.start_offset}-${e.end_offset}`,
+          key: tagKey,
           start_offset: e.start_offset,
           end_offset: e.end_offset,
           label: edited?.label ?? info?.code_name ?? e.code_name,
           definition: edited?.definition ?? info?.code_definition ?? "",
-          accepted: acceptedCodeNames.has(key),
+          accepted: acceptedExcerptKeys.has(tagKey),
           codeKey: key,
           iqLabel: info?.iq_label,
         };
@@ -329,9 +385,10 @@ export function CompareView({
       .filter((tag) => showAllCodes || !activeInterviewQuestionLabel || tag.iqLabel === activeInterviewQuestionLabel);
   }, [
     bundle,
+    bundleCodesByName,
     activeTranscript.file_name,
     editedByCodeName,
-    acceptedCodeNames,
+    acceptedExcerptKeys,
     excludedCodeNames,
     excludedRightKeys,
     showAllCodes,
@@ -415,7 +472,7 @@ export function CompareView({
             renderLeftActions={(tag) =>
               tag.key.startsWith("right-") ? (
                 <>
-                  <Button size="sm" variant="outline" onClick={() => toggleAccept(tag.codeKey ?? keyOf(tag.label))}>
+                  <Button size="sm" variant="outline" onClick={() => toggleAccept(tag.key)}>
                     Reject
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => excludeRightHighlight(tag.key)}>
@@ -424,7 +481,7 @@ export function CompareView({
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => excludeRightCode(tag.codeKey ?? keyOf(tag.label))}
+                    onClick={() => excludeRightCode(tag.codeKey!)}
                   >
                     Delete code
                   </Button>
@@ -469,7 +526,7 @@ export function CompareView({
                   onClick={() =>
                     setEditTarget({
                       side: "right",
-                      key: tag.codeKey ?? keyOf(tag.label),
+                      key: tag.codeKey!,
                       label: tag.label,
                       definition: tag.definition,
                     })
@@ -477,7 +534,7 @@ export function CompareView({
                 >
                   Edit
                 </Button>
-                <Button size="sm" onClick={() => toggleAccept(tag.codeKey ?? keyOf(tag.label))}>
+                <Button size="sm" onClick={() => toggleAccept(tag.key)}>
                   Accept
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => excludeRightHighlight(tag.key)}>
@@ -486,7 +543,7 @@ export function CompareView({
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => excludeRightCode(tag.codeKey ?? keyOf(tag.label))}
+                  onClick={() => excludeRightCode(tag.codeKey!)}
                 >
                   Delete code
                 </Button>
@@ -574,8 +631,9 @@ export function CompareView({
           <DialogHeader>
             <DialogTitle>Name this merged codebook version</DialogTitle>
             <DialogDescription>
-              {acceptedCodeNames.size} code{acceptedCodeNames.size === 1 ? "" : "s"} accepted, plus everything already in
-              your codebook.
+              {acceptedHighlightCount} highlight{acceptedHighlightCount === 1 ? "" : "s"} accepted across{" "}
+              {acceptedByCode.size} code{acceptedByCode.size === 1 ? "" : "s"}, plus everything already in your
+              codebook.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

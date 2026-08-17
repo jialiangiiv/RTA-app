@@ -152,8 +152,6 @@ export function TaggedTranscript({
     return () => window.removeEventListener("resize", recompute);
   }, [leftTags, rightTags, rawText]);
 
-  const hovered = [...leftTags, ...rightTags].find((t) => t.key === hoveredKey) ?? null;
-
   // Document order across BOTH columns, so "next" walks the transcript top-to-bottom regardless
   // of which side a highlight is on, rather than exhausting one column before the other.
   const orderedTags = [
@@ -161,6 +159,7 @@ export function TaggedTranscript({
     ...rightTags.map((tag) => ({ tag, side: "right" as const })),
   ].sort((a, b) => a.tag.start_offset - b.tag.start_offset);
   const currentIndex = orderedTags.findIndex(({ tag }) => tag.key === hoveredKey);
+  const hovered = currentIndex >= 0 ? orderedTags[currentIndex].tag : null;
 
   function goToNextHighlight() {
     if (orderedTags.length === 0) return;
@@ -222,7 +221,8 @@ export function TaggedTranscript({
       {orderedTags.length > 0 && (
         <div className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full border bg-popover px-3 py-2 text-popover-foreground shadow-lg">
           <span className="text-xs text-muted-foreground">
-            {currentIndex + 1}/{orderedTags.length} highlight{orderedTags.length === 1 ? "" : "s"}
+            {currentIndex >= 0 ? `${currentIndex + 1}/` : ""}
+            {orderedTags.length} highlight{orderedTags.length === 1 ? "" : "s"}
           </span>
           <Button
             type="button"
